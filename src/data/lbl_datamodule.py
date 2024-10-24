@@ -1,10 +1,30 @@
 import json
+import os
 from typing import Any, Dict, Optional, Tuple
 import numpy as np
 from lightning import LightningDataModule
-from monai.data import ImageDataset, DataLoader
-from monai.transforms import Compose, EnsureChannelFirst, Orientation, NormalizeIntensity, CropForeground, Resize, \
-    RandRotate, RandFlip, RandScaleIntensity, RandShiftIntensity, RandZoom
+from monai.data import ImageDataset, DataLoader, ITKReader
+from monai.transforms import (
+    Compose,
+    EnsureChannelFirst,
+    Orientation,
+    NormalizeIntensity,
+    CropForeground,
+    Resize,
+    RandRotate,
+    RandFlip,
+    RandScaleIntensity,
+    RandShiftIntensity,
+    RandZoom,
+)
+
+# # 测试模块导入的代码
+# import os
+# import sys
+# print(os.getcwd())
+# print(sys.path)
+# # sys.path.append(os.getcwd())
+# # print(sys.path)
 from src.utils import utils
 import pandas as pd
 
@@ -55,12 +75,13 @@ class LBLDataModule(LightningDataModule):
     """
 
     def __init__(
-            self,
-            data_dir: str = "data/",
-            train_val_test_split: Tuple[int, int, int] = (55_000, 5_000, 10_000),
-            batch_size: int = 2,
-            num_workers: int = 0,
-            pin_memory: bool = False,
+        self,
+        data_dir: str = "data/",
+        dataset_json: str = "",
+        batch_size: int = 2,
+        num_workers: int = 0,
+        pin_memory: bool = False,
+        input_size: list = [256, 256, 32],
     ) -> None:
         """Initialize a `LBLDataModule`.
 
@@ -72,14 +93,27 @@ class LBLDataModule(LightningDataModule):
         """
         super().__init__()
         self.fold = 0
+        self.data_dir = data_dir
         self.sequences: Dict[str, Any] = {
-            "0000": 'T1',
-            "0001": 'T2',
-            "0002": 'T1C',
+            "0000": "T1",
+            "0001": "T2",
+            "0002": "T1C",
         }
-        self.dataset_json = json.dumps(r"E:\projects\BIT\data\nnUNet_datasets\nnUNet_raw\Dataset803_LBL_raw_BJTR\dataset.json")
-        self.train_images = self.dataset_json['training']
-        self.test_images = self.dataset_json['testing']
+        with open(dataset_json, "r") as f:
+            self.dataset_json_content = json.load(f)
+
+        # 提取训练数据
+        self.train_images = self.extract_data("image", "training", self.fold)
+        self.train_segs = self.extract_data("label", "training", self.fold)
+        self.train_labels = self.extract_data("flag", "training", self.fold)
+        # 提取验证数据
+        self.val_images = self.extract_data("image", "training", self.fold)
+        self.val_segs = self.extract_data("label", "training", self.fold)
+        self.val_labels = self.extract_data("flag", "training", self.fold)
+        # 提取测试数据
+        self.test_images = self.extract_data("image", "testing")
+        self.test_segs = self.extract_data("label", "testing")
+        self.test_labels = self.extract_data("flag", "testing")
 
         self.dataset_func = ImageDataset
         # this line allows to access init params with 'self.hparams' attribute
@@ -91,34 +125,63 @@ class LBLDataModule(LightningDataModule):
             [
                 EnsureChannelFirst(),
                 NormalizeIntensity(),
-                Orientation(axcodes='RAS', lazy=True, ),
-                CropForeground(allow_smaller=False, lazy=True, ),
-                Resize(self.hparams.input_size),
-                RandRotate(range_x=0.3, range_y=0.0, range_z=0.0, prob=0.1, lazy=True, ),
-                RandFlip(prob=0.1, spatial_axis=[0], lazy=True, ),
-                RandFlip(prob=0.1, spatial_axis=[1], lazy=True, ),
-                RandScaleIntensity(factors=0.1, prob=0.1, ),
-                RandShiftIntensity(offsets=0.1, prob=0.1, ),
-                RandZoom(min_zoom=0.9, max_zoom=1.1, prob=0.1, lazy=True, ),
-            ]
+                # Orientation用的nibabel
+                Orientation(
+                    axcodes="RAS",
+                ),
+                CropForeground(
+                    allow_smaller=False,
+                ),
+                Resize(input_size),
+                RandRotate(
+                    range_x=0.3,
+                    range_y=0.0,
+                    range_z=0.0,
+                    prob=0.1,
+                ),
+                RandFlip(
+                    prob=0.1,
+                    spatial_axis=[0],
+                ),
+                RandFlip(
+                    prob=0.1,
+                    spatial_axis=[1],
+                ),
+                RandScaleIntensity(
+                    factors=0.1,
+                    prob=0.1,
+                ),
+                RandShiftIntensity(
+                    offsets=0.1,
+                    prob=0.1,
+                ),
+                RandZoom(
+                    min_zoom=0.9,
+                    max_zoom=1.1,
+                    prob=0.1,
+                ),
+            ],
+            lazy=False,
         )
         self.val_transforms = Compose(
             [
                 EnsureChannelFirst(),
                 NormalizeIntensity(),
-                Orientation(axcodes='RAS', lazy=True),
-                CropForeground(allow_smaller=False, lazy=True),
-                Resize(self.hparams.input_size, lazy=True),
-            ]
+                Orientation(axcodes="RAS"),
+                CropForeground(allow_smaller=False),
+                Resize(self.hparams.input_size),
+            ],
+            lazy=False,
         )
         self.test_transforms = Compose(
             [
                 EnsureChannelFirst(),
                 NormalizeIntensity(),
-                Orientation(axcodes='RAS', lazy=True),
-                CropForeground(allow_smaller=False, lazy=True),
-                Resize(self.hparams.input_size, lazy=True),
-            ]
+                Orientation(axcodes="RAS"),
+                CropForeground(allow_smaller=False),
+                Resize(self.hparams.input_size),
+            ],
+            lazy=False,
         )
 
         self.data_train: Optional[ImageDataset] = None
@@ -134,6 +197,22 @@ class LBLDataModule(LightningDataModule):
         :return: The number of LBL classes (10).
         """
         return 2
+
+    def extract_data(self, key, dataset_type="training", fold=None):
+        """Extract data from the dataset based on the given key, dataset type, and fold."""
+        data_list = self.dataset_json_content.get(dataset_type, [])
+        if key == "flag":
+            return [
+                item[key]
+                for item in data_list
+                if (fold is None or item.get("fold") == fold)
+            ]
+        else:
+            return [
+                os.path.join(self.data_dir, item[key])
+                for item in data_list
+                if (fold is None or item.get("fold") == fold)
+            ]
 
     def prepare_data(self) -> None:
         """Download data if needed. Lightning ensures that `self.prepare_data()` is called only
@@ -161,18 +240,35 @@ class LBLDataModule(LightningDataModule):
                 raise RuntimeError(
                     f"Batch size ({self.hparams.batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
                 )
-            self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
+            self.batch_size_per_device = (
+                self.hparams.batch_size // self.trainer.world_size
+            )
 
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
-            self.data_train = self.dataset_func(self.train_images, self.train_segs, self.train_labels,
-                                                transform=self.train_transforms)
-            self.data_val = self.dataset_func(self.val_images, self.val_segs, self.val_labels,
-                                              transform=self.val_transforms)
-            self.data_val = self.dataset_func(self.test_images, self.test_segs, self.test_labels,
-                                              transform=self.test_transforms)
+            self.data_train = self.dataset_func(
+                self.train_images,
+                self.train_segs,
+                self.train_labels,
+                transform=self.train_transforms,
+                reader=ITKReader(),
+            )
+            self.data_val = self.dataset_func(
+                self.val_images,
+                self.val_segs,
+                self.val_labels,
+                transform=self.val_transforms,
+                reader=ITKReader(),
+            )
+            self.data_val = self.dataset_func(
+                self.test_images,
+                self.test_segs,
+                self.test_labels,
+                transform=self.test_transforms,
+                reader=ITKReader(),
+            )
 
-    def train_dataloader(self) -> DataLoader[Any]:
+    def train_dataloader(self):
         """Create and return the train dataloader.
 
         :return: The train dataloader.
@@ -185,7 +281,7 @@ class LBLDataModule(LightningDataModule):
             shuffle=True,
         )
 
-    def val_dataloader(self) -> DataLoader[Any]:
+    def val_dataloader(self):
         """Create and return the validation dataloader.
 
         :return: The validation dataloader.
@@ -198,7 +294,7 @@ class LBLDataModule(LightningDataModule):
             shuffle=False,
         )
 
-    def test_dataloader(self) -> DataLoader[Any]:
+    def test_dataloader(self):
         """Create and return the test dataloader.
 
         :return: The test dataloader.
@@ -237,4 +333,12 @@ class LBLDataModule(LightningDataModule):
 
 
 if __name__ == "__main__":
-    _ = LBLDataModule()
+    data_dir = (
+        "/mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/"
+    )
+    dataset_json = "/mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/dataset.json"
+
+    lbl_dataset = LBLDataModule(data_dir=data_dir, dataset_json=dataset_json)
+    lbl_dataset.setup()
+    # 输出训练集数据第一个是否存在
+    print(os.path.isfile(lbl_dataset.train_images[0]))

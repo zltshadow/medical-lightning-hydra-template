@@ -1,10 +1,10 @@
 import warnings
 from importlib.util import find_spec
 from typing import Any, Callable, Dict, Optional, Tuple
-
 from omegaconf import DictConfig
-
 from src.utils import pylogger, rich_utils
+import os
+from natsort import natsorted
 
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 
@@ -117,3 +117,32 @@ def get_metric_value(metric_dict: Dict[str, Any], metric_name: Optional[str]) ->
     log.info(f"Retrieved metric value! <{metric_name}={metric_value}>")
 
     return metric_value
+
+
+def read_dir(dir_path, predicate=None, name_only=False, recursive=False):
+    def is_matching_file(file_name):
+        if predicate is None:
+            return True
+        elif isinstance(predicate, str):
+            return (predicate == "dir" and os.path.isdir(os.path.join(dir_path, file_name))) or \
+                (predicate == "file" and os.path.isfile(os.path.join(dir_path, file_name)))
+        elif isinstance(predicate, list):
+            return os.path.splitext(file_name)[-1][1:] in predicate
+        elif callable(predicate):
+            return predicate(file_name)
+        return False
+
+    # 检查目录是否存在
+    if not os.path.isdir(dir_path):
+        return []
+
+    # 递归遍历目录
+    output = []
+    for f in natsorted(os.listdir(dir_path)):
+        full_path = os.path.join(dir_path, f)
+        if is_matching_file(f):
+            output.append(f if name_only else full_path)
+        if recursive and os.path.isdir(full_path):
+            output.extend(read_dir(full_path, predicate, name_only, recursive))
+
+    return natsorted(output)
