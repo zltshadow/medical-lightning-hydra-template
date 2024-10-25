@@ -132,7 +132,7 @@ class LBLDataModule(LightningDataModule):
         # 定义变换, lazy在不用Orientation时是可以的
         self.train_transforms = Compose(
             [
-                LoadImaged(keys=["image", "seg"]),
+                LoadImaged(keys=["image", "seg"], reader=ITKReader),
                 EnsureChannelFirstd(keys=["image", "seg"]),
                 Orientationd(keys=["image", "seg"], axcodes="RAS"),
                 NormalizeIntensityd(
@@ -180,7 +180,7 @@ class LBLDataModule(LightningDataModule):
         )
         self.val_transforms = Compose(
             [
-                LoadImaged(keys=["image", "seg"]),
+                LoadImaged(keys=["image", "seg"], reader=ITKReader),
                 EnsureChannelFirstd(
                     keys=["image", "seg"],
                 ),
@@ -197,7 +197,7 @@ class LBLDataModule(LightningDataModule):
         )
         self.test_transforms = Compose(
             [
-                LoadImaged(keys=["image", "seg"]),
+                LoadImaged(keys=["image", "seg"], reader=ITKReader),
                 EnsureChannelFirstd(
                     keys=["image", "seg"],
                 ),
