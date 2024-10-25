@@ -104,7 +104,10 @@ class LBLLitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        image, seg, label = batch
+        image = batch["image"]
+        seg = batch["seg"]
+        label = batch["label"]
+        # image, seg, label = batch
         x = image
         y = label
         logits = self.forward(x)
