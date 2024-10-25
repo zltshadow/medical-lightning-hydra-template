@@ -17,6 +17,7 @@ from monai.transforms import (
     RandScaleIntensityd,
     RandShiftIntensityd,
     RandZoomd,
+    ToTensord,
 )
 
 # # 测试模块导入的代码
@@ -175,6 +176,7 @@ class LBLDataModule(LightningDataModule):
                     max_zoom=1.1,
                     prob=0.1,
                 ),
+                ToTensord(keys=["image", "seg", "label"], track_meta=False),
             ],
             lazy=True,
         )
@@ -192,6 +194,7 @@ class LBLDataModule(LightningDataModule):
                     keys=["image", "seg"], allow_smaller=False, source_key="image"
                 ),
                 Resized(keys=["image", "seg"], spatial_size=self.hparams.input_size),
+                ToTensord(keys=["image", "seg", "label"], track_meta=False),
             ],
             lazy=True,
         )
@@ -209,6 +212,7 @@ class LBLDataModule(LightningDataModule):
                     keys=["image", "seg"], allow_smaller=False, source_key="image"
                 ),
                 Resized(keys=["image", "seg"], spatial_size=self.hparams.input_size),
+                ToTensord(keys=["image", "seg", "label"], track_meta=False),
             ],
             lazy=True,
         )
@@ -427,11 +431,19 @@ if __name__ == "__main__":
     )
     lbl_dataset.setup()
     print(
-        lbl_dataset.data_train[0]["image"].shape, lbl_dataset.data_train[0]["seg"].shape
+        lbl_dataset.data_train[0]["image"].shape,
+        lbl_dataset.data_train[0]["seg"].shape,
+        lbl_dataset.data_val[0]["label"],
     )
-    print(lbl_dataset.data_val[0]["image"].shape, lbl_dataset.data_val[0]["seg"].shape)
     print(
-        lbl_dataset.data_test[0]["image"].shape, lbl_dataset.data_test[0]["seg"].shape
+        lbl_dataset.data_val[0]["image"].shape,
+        lbl_dataset.data_val[0]["seg"].shape,
+        lbl_dataset.data_val[0]["label"],
+    )
+    print(
+        lbl_dataset.data_test[0]["image"].shape,
+        lbl_dataset.data_test[0]["seg"].shape,
+        lbl_dataset.data_val[0]["label"],
     )
     first_data = next(iter(lbl_dataset.train_dataloader()))
     # 输出训练集数据第一个图像跟标签是否都存在
