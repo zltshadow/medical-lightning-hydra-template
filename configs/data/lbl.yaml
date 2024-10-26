@@ -8,7 +8,7 @@ data_dir: /mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw
 dataset_json: /mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/dataset.json
 splits_final_json: /mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/splits_final.json
 batch_size: 2
-# num_workers: 8
-num_workers: 0
+num_workers: 8
+# num_workers: 0
 pin_memory: False # 数据集小的时候设置为False，数据集大的时候可以设置为True，减小数据从CPU复制到GPU的开销
-input_size: [512, 512, 32]
+input_size: [256, 256, 32]

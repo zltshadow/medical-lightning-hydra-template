@@ -28,7 +28,6 @@ from monai.transforms import (
 # # sys.path.append(os.getcwd())
 # # print(sys.path)
 from src.utils import utils
-import pandas as pd
 
 
 class LBLDataModule(LightningDataModule):
@@ -116,6 +115,22 @@ class LBLDataModule(LightningDataModule):
         self.train_images = self.extract_data("image", "train")
         self.train_segs = self.extract_data("label", "train")
         self.train_labels = self.extract_data("flag", "train")
+        # # 使用全部数据训练，查看网络是否能过拟合
+        # self.train_images = [
+        #     os.path.join(self.data_dir, i["image"])
+        #     for i in self.dataset_json_content["training"]
+        #     + self.dataset_json_content["test"]
+        # ]
+        # self.train_segs = [
+        #     os.path.join(self.data_dir, i["label"])
+        #     for i in self.dataset_json_content["training"]
+        #     + self.dataset_json_content["test"]
+        # ]
+        # self.train_labels = [
+        #     i["flag"]
+        #     for i in self.dataset_json_content["training"]
+        #     + self.dataset_json_content["test"]
+        # ]
         # 提取验证数据
         self.val_images = self.extract_data("image", "val")
         self.val_segs = self.extract_data("label", "val")
@@ -417,6 +432,7 @@ class LBLDataModule(LightningDataModule):
 
 
 if __name__ == "__main__":
+    utils.add_torch_shape_forvs()
     data_dir = (
         "/mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/"
     )
@@ -433,7 +449,7 @@ if __name__ == "__main__":
     print(
         lbl_dataset.data_train[0]["image"].shape,
         lbl_dataset.data_train[0]["seg"].shape,
-        lbl_dataset.data_val[0]["label"],
+        lbl_dataset.data_train[0]["label"],
     )
     print(
         lbl_dataset.data_val[0]["image"].shape,
@@ -443,11 +459,12 @@ if __name__ == "__main__":
     print(
         lbl_dataset.data_test[0]["image"].shape,
         lbl_dataset.data_test[0]["seg"].shape,
-        lbl_dataset.data_val[0]["label"],
+        lbl_dataset.data_test[0]["label"],
     )
     first_data = next(iter(lbl_dataset.train_dataloader()))
     # 输出训练集数据第一个图像跟标签是否都存在
-    print(first_data["image"].shape, lbl_dataset.train_segs[0])
+    print(first_data["image"].shape, lbl_dataset.train_images[0])
+    print(first_data["seg"].shape, lbl_dataset.train_segs[0])
     print(
         os.path.isfile(lbl_dataset.train_images[0])
         and os.path.isfile(lbl_dataset.train_segs[0])

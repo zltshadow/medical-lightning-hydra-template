@@ -209,7 +209,7 @@ class LBLLitModule(LightningModule):
             "test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True
         )
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""

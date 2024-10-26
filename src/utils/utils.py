@@ -146,3 +146,20 @@ def read_dir(dir_path, predicate=None, name_only=False, recursive=False):
             output.extend(read_dir(full_path, predicate, name_only, recursive))
 
     return natsorted(output)
+
+
+def add_torch_shape_forvs():
+
+    import torch
+
+    original_repr = torch.Tensor.__repr__
+
+
+    def custom_repr(self):
+        return f"{{Tensor:{tuple(self.shape)}, {self.device}, {self.dtype}}} {original_repr(self)}"
+
+
+    def enable_custom_repr():
+        torch.Tensor.__repr__ = custom_repr
+
+    enable_custom_repr()
