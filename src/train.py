@@ -26,7 +26,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 
-from src.utils import add_torch_shape_forvs
+from src.utils.utils import add_torch_shape_forvs
 
 add_torch_shape_forvs()
 

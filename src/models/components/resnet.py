@@ -35,7 +35,6 @@ if __name__ == "__main__":
         n_input_channels=1,
         num_classes=2,
     )
-    # model = resnet50(spatial_dims=3, n_input_channels=1, num_classes=2)
     img = torch.randn(2, 1, 256, 256, 32)
     preds = model(img)
-    print(preds.shape)
+    print(preds[0].shape)
