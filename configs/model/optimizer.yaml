@@ -1,0 +1,18 @@
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 1e-5
+
+scheduler:
+  # _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  # _partial_: true
+  # mode: min
+  # factor: 0.1
+  # patience: 10
+  _target_: monai.optimizers.WarmupCosineSchedule
+  _partial_: true
+  warmup_steps: 10
+  t_total: 200
+
+# compile model for faster training with pytorch 2.0
+compile: false

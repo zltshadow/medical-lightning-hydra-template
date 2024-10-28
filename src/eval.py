@@ -5,6 +5,7 @@ import rootutils
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
+import torch
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -82,7 +83,7 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     return metric_dict, object_dict
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="eval.yaml")
+@hydra.main(version_base="1.3", config_path="../configs", config_name="eval_lbl.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for evaluation.
 
@@ -96,4 +97,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    torch.set_float32_matmul_precision("medium")
     main()

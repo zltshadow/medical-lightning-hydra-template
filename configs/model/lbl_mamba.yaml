@@ -1,0 +1,10 @@
+defaults:
+  - _self_
+  - optimizer
+
+_target_: src.models.lbl_module.LBLLitModule
+
+net:
+  _target_: src.models.components.mamba.nnMambaEncoder
+  number_classes: 2
+  

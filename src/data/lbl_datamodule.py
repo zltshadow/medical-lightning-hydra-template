@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 from lightning import LightningDataModule
 from monai.data import CacheDataset, DataLoader, ITKReader
@@ -78,7 +78,7 @@ class LBLDataModule(LightningDataModule):
     def __init__(
         self,
         data_dir: str = "data/",
-        fold: int = 0,
+        fold: Union[int, str] = 0,
         sequence_idx: str = "0000",
         dataset_json: str = "",
         splits_final_json: str = "",
@@ -111,30 +111,51 @@ class LBLDataModule(LightningDataModule):
         with open(splits_final_json, "r") as f:
             self.splits_final_json_content = json.load(f)
 
-        # 提取训练数据
-        self.train_images = self.extract_data("image", "train")
-        self.train_segs = self.extract_data("label", "train")
-        self.train_labels = self.extract_data("flag", "train")
-        # # 使用全部数据训练，查看网络是否能过拟合
-        # self.train_images = [
-        #     os.path.join(self.data_dir, i["image"])
-        #     for i in self.dataset_json_content["training"]
-        #     + self.dataset_json_content["test"]
-        # ]
-        # self.train_segs = [
-        #     os.path.join(self.data_dir, i["label"])
-        #     for i in self.dataset_json_content["training"]
-        #     + self.dataset_json_content["test"]
-        # ]
-        # self.train_labels = [
-        #     i["flag"]
-        #     for i in self.dataset_json_content["training"]
-        #     + self.dataset_json_content["test"]
-        # ]
-        # 提取验证数据
-        self.val_images = self.extract_data("image", "val")
-        self.val_segs = self.extract_data("label", "val")
-        self.val_labels = self.extract_data("flag", "val")
+        if self.fold == "all":
+            # 使用全部数据训练，查看网络是否能过拟合
+            self.train_images = [
+                os.path.join(self.data_dir, i["image"])
+                for i in self.dataset_json_content["training"]
+                + self.dataset_json_content["test"]
+            ]
+            self.train_segs = [
+                os.path.join(self.data_dir, i["label"])
+                for i in self.dataset_json_content["training"]
+                + self.dataset_json_content["test"]
+            ]
+            self.train_labels = [
+                i["flag"]
+                for i in self.dataset_json_content["training"]
+                + self.dataset_json_content["test"]
+            ]
+            self.val_images = self.train_images
+            self.val_segs = self.train_segs
+            self.val_labels = self.train_labels
+        elif self.fold == "train_val":
+            # 使用训练验证集训练，查看网络是否能过拟合
+            self.train_images = [
+                os.path.join(self.data_dir, i["image"])
+                for i in self.dataset_json_content["training"]
+            ]
+            self.train_segs = [
+                os.path.join(self.data_dir, i["label"])
+                for i in self.dataset_json_content["training"]
+            ]
+            self.train_labels = [
+                i["flag"] for i in self.dataset_json_content["training"]
+            ]
+            self.val_images = self.extract_data("image", "test")
+            self.val_segs = self.extract_data("label", "test")
+            self.val_labels = self.extract_data("flag", "test")
+        else:
+            # 提取训练数据
+            self.train_images = self.extract_data("image", "train")
+            self.train_segs = self.extract_data("label", "train")
+            self.train_labels = self.extract_data("flag", "train")
+            # 提取验证数据
+            self.val_images = self.extract_data("image", "val")
+            self.val_segs = self.extract_data("label", "val")
+            self.val_labels = self.extract_data("flag", "val")
         # 提取测试数据
         self.test_images = self.extract_data("image", "test")
         self.test_segs = self.extract_data("label", "test")
