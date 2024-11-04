@@ -6,7 +6,7 @@ _target_: src.models.lbl_module.LBLLitModule
 
 net:
   _target_: src.models.components.vit.ViT
-  img_size: [256, 256, 32]
+  img_size: ${data.input_size}
   patch_size: [16, 16, 16]
   spatial_dims: 3
   in_channels: 1

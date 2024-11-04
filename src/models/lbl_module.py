@@ -3,8 +3,17 @@ from typing import Any, Dict, Tuple
 import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification.accuracy import BinaryAccuracy
-from torchmetrics.classification.auroc import BinaryAUROC
+from torchmetrics.classification import (
+    BinaryAccuracy,
+    BinaryAUROC,
+    BinaryPrecision,
+    BinaryRecall,
+    BinaryF1Score,
+    BinaryConfusionMatrix,
+)
+
+# 初始化指标
+import torch.nn.functional as F
 
 
 class LBLLitModule(LightningModule):
@@ -63,6 +72,8 @@ class LBLLitModule(LightningModule):
 
         # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
+        # weight_tensor = torch.tensor([0.68965517, 1.81818182], dtype=torch.float)
+        # self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=weight_tensor)
 
         # metric objects for calculating and averaging accuracy across batches
         self.train_acc = BinaryAccuracy()
@@ -72,6 +83,13 @@ class LBLLitModule(LightningModule):
         self.train_auc = BinaryAUROC()
         self.val_auc = BinaryAUROC()
         self.test_auc = BinaryAUROC()
+        self.test_precision = BinaryPrecision()
+        self.test_recall = BinaryRecall()
+        self.test_f1 = BinaryF1Score()
+        self.test_confusion_matrix = BinaryConfusionMatrix()
+        self.test_probs = torch.Tensor([])
+        self.test_preds = torch.Tensor([])
+        self.test_targets = torch.Tensor([])
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -120,8 +138,13 @@ class LBLLitModule(LightningModule):
         y = label
         logits = self.forward(x)
         loss = self.criterion(logits, y)
+        # 应用softmax函数，dim=1表示对每一行进行操作：
+        probs = F.softmax(logits, dim=1)
+        # one_hot_y = F.one_hot(y, num_classes=2).float()
+        # # BCE需要使用one_hot
+        # loss = self.criterion(logits, one_hot_y)
         preds = torch.argmax(logits, dim=1)
-        return loss, preds, y
+        return loss, probs, preds, y
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -133,7 +156,7 @@ class LBLLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self.train_loss(loss)
@@ -165,7 +188,7 @@ class LBLLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self.val_loss(loss)
@@ -199,21 +222,45 @@ class LBLLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self.test_loss(loss)
         self.test_acc(preds, targets)
         self.test_auc(preds, targets)
+        self.test_precision(preds, targets)
+        self.test_recall(preds, targets)
+        self.test_f1(preds, targets)
+        self.test_probs = torch.concat((self.test_probs.to(probs.device), probs), dim=0)
+        self.test_preds = torch.concat((self.test_preds.to(preds.device), preds), dim=0)
+        self.test_targets = torch.concat(
+            (self.test_targets.to(targets.device), targets), dim=0
+        )
+        # confusion_matrix = self.test_confusion_matrix(preds, targets)
         self.log(
             "test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True
         )
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "test/precision",
+            self.test_precision,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "test/recall", self.test_recall, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.log("test/f1", self.test_f1, on_step=False, on_epoch=True, prog_bar=True)
+        # self.log("test/confusion_matrix", confusion_matrix, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
-        pass
+        print(self.test_confusion_matrix(self.test_preds, self.test_targets))
+        # print(self.test_probs.tolist())
+        print(self.test_preds.tolist())
+        print(self.test_targets.tolist())
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

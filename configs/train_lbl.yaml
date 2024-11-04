@@ -7,7 +7,7 @@ defaults:
   - data: lbl
   - model: lbl_mamba
   - callbacks: default
-  - logger: tensorboard # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - logger: many_loggers # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: gpu
   - paths: default
   - extras: default
@@ -33,7 +33,7 @@ task_name: "train"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["dev"]
+tags: []
 
 # set False to skip model training
 train: True

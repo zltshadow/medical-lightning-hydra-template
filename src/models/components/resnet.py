@@ -35,6 +35,6 @@ if __name__ == "__main__":
         n_input_channels=1,
         num_classes=2,
     )
-    img = torch.randn(2, 1, 256, 256, 32)
+    img = torch.randn(2, 1, 128, 128, 32)
     preds = model(img)
     print(preds[0].shape)

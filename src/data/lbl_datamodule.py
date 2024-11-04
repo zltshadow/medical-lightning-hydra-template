@@ -1,6 +1,8 @@
 import json
 import os
 from typing import Any, Dict, Optional, Tuple, Union
+from matplotlib import pyplot as plt
+from natsort import natsorted
 import numpy as np
 from lightning import LightningDataModule
 from monai.data import CacheDataset, DataLoader, ITKReader
@@ -12,6 +14,10 @@ from monai.transforms import (
     NormalizeIntensityd,
     CropForegroundd,
     Resized,
+    Spacingd,
+    CenterSpatialCropd,
+    SpatialCropd,
+    SpatialPadd,
     RandRotated,
     RandFlipd,
     RandScaleIntensityd,
@@ -19,6 +25,11 @@ from monai.transforms import (
     RandZoomd,
     ToTensord,
 )
+import pandas as pd
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.utils import compute_class_weight
+import torch
+import yaml
 
 # # 测试模块导入的代码
 # import os
@@ -82,10 +93,10 @@ class LBLDataModule(LightningDataModule):
         sequence_idx: str = "0000",
         dataset_json: str = "",
         splits_final_json: str = "",
-        batch_size: int = 2,
+        batch_size: int = 4,
         num_workers: int = 0,
         pin_memory: bool = False,
-        input_size: list = [256, 256, 32],
+        input_size: list = [128, 128, 32],
     ) -> None:
         """Initialize a `LBLDataModule`.
 
@@ -97,21 +108,22 @@ class LBLDataModule(LightningDataModule):
         """
         super().__init__()
         self.sequences: Dict[str, Any] = {
-            "0000": "T1",
-            "0001": "T2",
-            "0002": "T1C",
+            "0000": "T1_AX_nFS",
+            "0001": "T2_AX_nFS",
+            "0002": "T1C_AX_FS",
         }
         self.fold = fold
         self.data_dir = data_dir
         self.sequence_idx = sequence_idx
         self.sequence_name = self.sequences[sequence_idx]
+        self.input_size = input_size
 
         with open(dataset_json, "r") as f:
             self.dataset_json_content = json.load(f)
         with open(splits_final_json, "r") as f:
             self.splits_final_json_content = json.load(f)
 
-        if self.fold == "all":
+        if self.fold in ["all", "extest"]:
             # 使用全部数据训练，查看网络是否能过拟合
             self.train_images = [
                 os.path.join(self.data_dir, i["image"])
@@ -131,22 +143,239 @@ class LBLDataModule(LightningDataModule):
             self.val_images = self.train_images
             self.val_segs = self.train_segs
             self.val_labels = self.train_labels
+
+            extest_dir = "/data/zlt/projects/data/LBL_raw"
+            extest_df = pd.read_excel(f"{extest_dir}/LBL_raw.xlsx")
+            extest_df = extest_df[extest_df["来源医院"].isin(["南昌附二"])]
+            first_sequence_name = f"{self.sequence_name}"
+            extest_images = [
+                f"{extest_dir}/{i}/{first_sequence_name}/Nii/{first_sequence_name}.nii.gz"
+                for i in extest_df["输出文件夹"]
+            ]
+            extest_segs = [
+                f"{extest_dir}/{i}/{first_sequence_name}/Label/{first_sequence_name}_Label.nii.gz"
+                for i in extest_df["输出文件夹"]
+            ]
+            extest_labels = np.array([i for i in extest_df["病理级别"]])
+            # 不需要变为one_hot模式
+            # extest_labels = torch.nn.functional.one_hot(
+            #     torch.as_tensor(extest_labels).to(torch.int64)
+            # ).float()
+            self.test_images = extest_images
+            self.test_segs = extest_segs
+            self.test_labels = extest_labels
         elif self.fold == "train_val":
-            # 使用训练验证集训练，查看网络是否能过拟合
+            all_data_df = pd.read_excel(
+                "/data/zlt/projects/data/LBL_raw_BJTR/LBL_raw_BJTR.xlsx"
+            )
+            # 划分训练_验证180例、测试集44例
+            split_ratio = 180
+            train_val_df, test_df = train_test_split(
+                all_data_df,
+                train_size=split_ratio,
+                stratify=all_data_df["病理级别"].values,
+                random_state=66,
+            )
+
+            train_val_df = train_val_df.iloc[
+                natsorted(
+                    range(len(train_val_df)),
+                    key=lambda i: train_val_df["输出文件夹"].iloc[i],
+                )
+            ].reset_index(drop=True)
+            test_df = test_df.iloc[
+                natsorted(
+                    range(len(test_df)), key=lambda i: test_df["输出文件夹"].iloc[i]
+                )
+            ].reset_index(drop=True)
+
             self.train_images = [
-                os.path.join(self.data_dir, i["image"])
-                for i in self.dataset_json_content["training"]
+                os.path.join(
+                    "/data/zlt/projects/data/LBL_raw_BJTR",
+                    i,
+                    (
+                        f"{self.sequence_name }"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0]
+                    ),
+                    f"Nii",
+                    (
+                        f"{self.sequence_name }.nii.gz"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0] + ".nii.gz"
+                    ),
+                )
+                for i in train_val_df["输出文件夹"]
             ]
             self.train_segs = [
-                os.path.join(self.data_dir, i["label"])
-                for i in self.dataset_json_content["training"]
+                os.path.join(
+                    "/data/zlt/projects/data/LBL_raw_BJTR",
+                    i,
+                    (
+                        f"{self.sequence_name}"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0]
+                    ),
+                    f"Label",
+                    (
+                        f"{self.sequence_name}_Label.nii.gz"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0] + ".nii.gz"
+                    ),
+                )
+                for i in train_val_df["输出文件夹"]
             ]
-            self.train_labels = [
-                i["flag"] for i in self.dataset_json_content["training"]
+            self.train_labels = train_val_df["病理级别"].values
+
+            self.val_images = [
+                os.path.join(
+                    "/data/zlt/projects/data/LBL_raw_BJTR",
+                    i,
+                    (
+                        f"{self.sequence_name }"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0]
+                    ),
+                    f"Nii",
+                    (
+                        f"{self.sequence_name }.nii.gz"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0] + ".nii.gz"
+                    ),
+                )
+                for i in test_df["输出文件夹"]
             ]
-            self.val_images = self.extract_data("image", "test")
-            self.val_segs = self.extract_data("label", "test")
-            self.val_labels = self.extract_data("flag", "test")
+            self.val_segs = [
+                os.path.join(
+                    "/data/zlt/projects/data/LBL_raw_BJTR",
+                    i,
+                    (
+                        f"{self.sequence_name}"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0]
+                    ),
+                    f"Label",
+                    (
+                        f"{self.sequence_name}_Label.nii.gz"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0] + ".nii.gz"
+                    ),
+                )
+                for i in test_df["输出文件夹"]
+            ]
+            self.val_labels = test_df["病理级别"].values
+
+            self.test_images = [
+                os.path.join(
+                    "/data/zlt/projects/data/LBL_raw_BJTR",
+                    i,
+                    (
+                        f"{self.sequence_name }"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0]
+                    ),
+                    f"Nii",
+                    (
+                        f"{self.sequence_name }.nii.gz"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0] + ".nii.gz"
+                    ),
+                )
+                for i in test_df["输出文件夹"]
+            ]
+            self.test_segs = [
+                os.path.join(
+                    "/data/zlt/projects/data/LBL_raw_BJTR",
+                    i,
+                    (
+                        f"{self.sequence_name}"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0]
+                    ),
+                    f"Label",
+                    (
+                        f"{self.sequence_name}_Label.nii.gz"
+                        if "+" not in self.sequence_name
+                        else self.sequence_name.split("+")[0] + ".nii.gz"
+                    ),
+                )
+                for i in test_df["输出文件夹"]
+            ]
+            self.test_labels = test_df["病理级别"].values
+
+            # # 使用训练验证集训练，查看网络是否能过拟合
+            # self.train_images = [
+            #     os.path.join(self.data_dir, i["image"])
+            #     for i in self.dataset_json_content["training"]
+            # ]
+            # self.train_segs = [
+            #     os.path.join(self.data_dir, i["label"])
+            #     for i in self.dataset_json_content["training"]
+            # ]
+            # self.train_labels = [
+            #     i["flag"] for i in self.dataset_json_content["training"]
+            # ]
+            # self.val_images = self.extract_data("image", "test")
+            # self.val_segs = self.extract_data("label", "test")
+            # self.val_labels = self.extract_data("flag", "test")
+            # 提取测试数据
+            # self.test_images = self.extract_data("image", "test")
+            # self.test_segs = self.extract_data("label", "test")
+            # self.test_labels = self.extract_data("flag", "test")
+        elif self.fold == "reg":
+            all_data_df = pd.read_excel(
+                "/data/zlt/projects/data/LBL_raw_BJTR/LBL_raw_BJTR.xlsx"
+            )
+            # 划分训练_验证180例、测试集44例
+            split_ratio = 180
+            train_val_df, test_df = train_test_split(
+                all_data_df,
+                train_size=split_ratio,
+                stratify=all_data_df["病理级别"].values,
+                random_state=66,
+            )
+
+            train_val_df = train_val_df.iloc[
+                natsorted(
+                    range(len(train_val_df)),
+                    key=lambda i: train_val_df["输出文件夹"].iloc[i],
+                )
+            ].reset_index(drop=True)
+            test_df = test_df.iloc[
+                natsorted(
+                    range(len(test_df)), key=lambda i: test_df["输出文件夹"].iloc[i]
+                )
+            ].reset_index(drop=True)
+            data_root = "/data/zlt/projects/OrbitalMamba/outputs/antspy_reg/"
+            self.train_images = [
+                os.path.join(data_root, i, f"{self.sequence_name}_antspy_reg.nii.gz")
+                for i in train_val_df["输出文件夹"]
+            ]
+            self.train_segs = [
+                os.path.join(data_root, i, f"{self.sequence_name}_antspy_reg_label.nii.gz")
+                for i in train_val_df["输出文件夹"]
+            ]
+            self.train_labels = train_val_df["病理级别"].values
+
+            self.val_images = [
+                os.path.join(data_root, i, f"{self.sequence_name}_antspy_reg.nii.gz")
+                for i in test_df["输出文件夹"]
+            ]
+            self.val_segs = [
+                os.path.join(data_root, i, f"{self.sequence_name}_antspy_reg_label.nii.gz")
+                for i in test_df["输出文件夹"]
+            ]
+            self.val_labels = test_df["病理级别"].values
+
+            self.test_images = [
+                os.path.join(data_root, i, f"{self.sequence_name}_antspy_reg.nii.gz")
+                for i in test_df["输出文件夹"]
+            ]
+            self.test_segs = [
+                os.path.join(data_root, i, f"{self.sequence_name}_antspy_reg_label.nii.gz")
+                for i in test_df["输出文件夹"]
+            ]
+            self.test_labels = test_df["病理级别"].values
         else:
             # 提取训练数据
             self.train_images = self.extract_data("image", "train")
@@ -156,10 +385,10 @@ class LBLDataModule(LightningDataModule):
             self.val_images = self.extract_data("image", "val")
             self.val_segs = self.extract_data("label", "val")
             self.val_labels = self.extract_data("flag", "val")
-        # 提取测试数据
-        self.test_images = self.extract_data("image", "test")
-        self.test_segs = self.extract_data("label", "test")
-        self.test_labels = self.extract_data("flag", "test")
+            # 提取测试数据
+            self.test_images = self.extract_data("image", "test")
+            self.test_segs = self.extract_data("label", "test")
+            self.test_labels = self.extract_data("flag", "test")
 
         self.dataset_func = CacheDataset
         # this line allows to access init params with 'self.hparams' attribute
@@ -178,40 +407,54 @@ class LBLDataModule(LightningDataModule):
                 CropForegroundd(
                     keys=["image", "seg"], allow_smaller=False, source_key="image"
                 ),
-                Resized(keys=["image", "seg"], spatial_size=input_size),
-                RandRotated(
-                    keys=["image", "seg"],
-                    range_x=0.3,
-                    range_y=0.0,
-                    range_z=0.0,
-                    prob=0.1,
-                ),
-                RandFlipd(
-                    keys=["image", "seg"],
-                    prob=0.1,
-                    spatial_axis=[0],
-                ),
-                RandFlipd(
-                    keys=["image", "seg"],
-                    prob=0.1,
-                    spatial_axis=[1],
-                ),
-                RandScaleIntensityd(
-                    keys=["image", "seg"],
-                    factors=0.1,
-                    prob=0.1,
-                ),
-                RandShiftIntensityd(
-                    keys=["image", "seg"],
-                    offsets=0.1,
-                    prob=0.1,
-                ),
-                RandZoomd(
-                    keys=["image", "seg"],
-                    min_zoom=0.9,
-                    max_zoom=1.1,
-                    prob=0.1,
-                ),
+                Resized(keys=["image", "seg"], spatial_size=self.input_size),
+                # CenterSpatialCropd(
+                #     keys=["image", "seg"],
+                #     roi_size=(
+                #         self.input_size[1],
+                #         -1,
+                #         self.input_size[2],
+                #     ),
+                # ),
+                # SpatialCropd(
+                #     keys=["image", "seg"],
+                #     roi_start=(0, 0, 0),
+                #     roi_end=tuple(self.input_size),
+                # ),
+                # SpatialPadd(keys=["image", "seg"], spatial_size=tuple(self.input_size)),
+                # RandRotated(
+                #     keys=["image", "seg"],
+                #     range_x=0.1,
+                #     range_y=0.0,
+                #     range_z=0.0,
+                #     prob=1,
+                # ),
+                # RandFlipd(
+                #     keys=["image", "seg"],
+                #     prob=0.1,
+                #     spatial_axis=[0],
+                # ),
+                # RandFlipd(
+                #     keys=["image", "seg"],
+                #     prob=0.1,
+                #     spatial_axis=[1],
+                # ),
+                # RandScaleIntensityd(
+                #     keys=["image"],
+                #     factors=0.1,
+                #     prob=0.1,
+                # ),
+                # RandShiftIntensityd(
+                #     keys=["image"],
+                #     offsets=0.1,
+                #     prob=0.1,
+                # ),
+                # RandZoomd(
+                #     keys=["image", "seg"],
+                #     min_zoom=0.9,
+                #     max_zoom=1.1,
+                #     prob=0.1,
+                # ),
                 ToTensord(keys=["image", "seg", "label"], track_meta=False),
             ],
             lazy=True,
@@ -229,7 +472,21 @@ class LBLDataModule(LightningDataModule):
                 CropForegroundd(
                     keys=["image", "seg"], allow_smaller=False, source_key="image"
                 ),
-                Resized(keys=["image", "seg"], spatial_size=self.hparams.input_size),
+                Resized(keys=["image", "seg"], spatial_size=self.input_size),
+                # CenterSpatialCropd(
+                #     keys=["image", "seg"],
+                #     roi_size=(
+                #         self.input_size[1],
+                #         -1,
+                #         self.input_size[2],
+                #     ),
+                # ),
+                # SpatialCropd(
+                #     keys=["image", "seg"],
+                #     roi_start=(0, 0, 0),
+                #     roi_end=tuple(self.input_size),
+                # ),
+                SpatialPadd(keys=["image", "seg"], spatial_size=tuple(self.input_size)),
                 ToTensord(keys=["image", "seg", "label"], track_meta=False),
             ],
             lazy=True,
@@ -247,11 +504,66 @@ class LBLDataModule(LightningDataModule):
                 CropForegroundd(
                     keys=["image", "seg"], allow_smaller=False, source_key="image"
                 ),
-                Resized(keys=["image", "seg"], spatial_size=self.hparams.input_size),
+                Resized(keys=["image", "seg"], spatial_size=self.input_size),
+                # CenterSpatialCropd(
+                #     keys=["image", "seg"],
+                #     roi_size=(
+                #         self.input_size[1],
+                #         -1,
+                #         self.input_size[2],
+                #     ),
+                # ),
+                # SpatialCropd(
+                #     keys=["image", "seg"],
+                #     roi_start=(0, 0, 0),
+                #     roi_end=tuple(self.input_size),
+                # ),
+                # SpatialPadd(keys=["image", "seg"], spatial_size=tuple(self.input_size)),
                 ToTensord(keys=["image", "seg", "label"], track_meta=False),
             ],
             lazy=True,
         )
+
+        # 处理外部数据集
+        if fold == "extest":
+            self.test_transforms = Compose(
+                [
+                    LoadImaged(keys=["image", "seg"], reader=ITKReader),
+                    EnsureChannelFirstd(
+                        keys=["image", "seg"],
+                    ),
+                    Orientationd(keys=["image", "seg"], axcodes="RAS"),
+                    NormalizeIntensityd(
+                        keys=["image", "seg"],
+                    ),
+                    # Spacingd(
+                    #     keys=["image", "seg"],
+                    #     pixdim=(1, 1, 1),
+                    # ),
+                    CropForegroundd(
+                        keys=["image", "seg"], allow_smaller=False, source_key="image"
+                    ),
+                    Resized(keys=["image", "seg"], spatial_size=self.input_size),
+                    # CenterSpatialCropd(
+                    #     keys=["image", "seg"],
+                    #     roi_size=(
+                    #         self.input_size[1],
+                    #         -1,
+                    #         self.input_size[2],
+                    #     ),
+                    # ),
+                    # SpatialCropd(
+                    #     keys=["image", "seg"],
+                    #     roi_start=(0, 0, 0),
+                    #     roi_end=tuple(self.input_size),
+                    # ),
+                    # SpatialPadd(
+                    #     keys=["image", "seg"], spatial_size=tuple(self.input_size)
+                    # ),
+                    ToTensord(keys=["image", "seg", "label"], track_meta=False),
+                ],
+                lazy=True,
+            )
 
         self.data_train: Optional[CacheDataset] = None
         self.data_val: Optional[CacheDataset] = None
@@ -454,34 +766,117 @@ class LBLDataModule(LightningDataModule):
 
 if __name__ == "__main__":
     utils.add_torch_shape_forvs()
-    data_dir = (
-        "/mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/"
-    )
-    dataset_json = "/mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/dataset.json"
-    splits_final_json = "/mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/splits_final.json"
+    with open("configs/data/lbl.yaml", "r", encoding="utf-8") as f:
+        data_config = yaml.load(f.read(), Loader=yaml.FullLoader)
+    data_dir = data_config["data_dir"]
+    dataset_json = data_config["dataset_json"]
+    splits_final_json = data_config["splits_final_json"]
+    fold = 0
+    fold = "extest"
+    fold = "train_val"
     # 默认模态是0000，测试0001
     lbl_dataset = LBLDataModule(
         data_dir=data_dir,
+        fold=fold,
         sequence_idx="0001",
         dataset_json=dataset_json,
         splits_final_json=splits_final_json,
     )
     lbl_dataset.setup()
-    print(
-        lbl_dataset.data_train[0]["image"].shape,
-        lbl_dataset.data_train[0]["seg"].shape,
-        lbl_dataset.data_train[0]["label"],
+
+    # 获取训练、验证和测试集的第一个样本
+    image_train = lbl_dataset.data_train[0]["image"][0]
+    seg_train = lbl_dataset.data_train[0]["seg"][0]
+
+    image_val = lbl_dataset.data_val[0]["image"][0]
+    seg_val = lbl_dataset.data_val[0]["seg"][0]
+
+    image_test = lbl_dataset.data_test[0]["image"][0]
+    seg_test = lbl_dataset.data_test[0]["seg"][0]
+
+    # 打印图像和分割的形状
+    print("Train Image Shape:", image_train.shape)
+    print("Train Segmentation Shape:", seg_train.shape)
+    print("Validation Image Shape:", image_val.shape)
+    print("Validation Segmentation Shape:", seg_val.shape)
+    print("Test Image Shape:", image_test.shape)
+    print("Test Segmentation Shape:", seg_test.shape)
+
+    # 计算中间切片的索引
+    mid_idx_train = image_train.shape[-1] // 2
+    mid_idx_val = image_val.shape[-1] // 2
+    mid_idx_test = image_test.shape[-1] // 2
+
+    # 提取中间切片
+    image_slice_train = image_train[:, :, mid_idx_train]
+    seg_slice_train = seg_train[:, :, mid_idx_train]
+
+    image_slice_val = image_val[:, :, mid_idx_val]
+    seg_slice_val = seg_val[:, :, mid_idx_val]
+
+    image_slice_test = image_test[:, :, mid_idx_test]
+    seg_slice_test = seg_test[:, :, mid_idx_test]
+
+    # 创建拼图，2行3列
+    fig, axs = plt.subplots(2, 3, figsize=(15, 10))  # 2行3列
+
+    # 定义旋转函数
+    def rotate_image(image):
+        return np.rot90(image, k=1, axes=(0, 1))
+
+    # 训练集
+    axs[0, 0].imshow(rotate_image(image_slice_train), cmap="gray")
+    axs[0, 0].set_title("Train Image Slice")
+    axs[0, 0].axis("off")
+
+    axs[1, 0].imshow(rotate_image(seg_slice_train), cmap="jet", alpha=0.5)
+    axs[1, 0].set_title("Train Segmentation Slice")
+    axs[1, 0].axis("off")
+
+    # 验证集
+    axs[0, 1].imshow(rotate_image(image_slice_val), cmap="gray")
+    axs[0, 1].set_title("Validation Image Slice")
+    axs[0, 1].axis("off")
+
+    axs[1, 1].imshow(rotate_image(seg_slice_val), cmap="jet", alpha=0.5)
+    axs[1, 1].set_title("Validation Segmentation Slice")
+    axs[1, 1].axis("off")
+
+    # 测试集
+    axs[0, 2].imshow(rotate_image(image_slice_test), cmap="gray")
+    axs[0, 2].set_title("Test Image Slice")
+    axs[0, 2].axis("off")
+
+    axs[1, 2].imshow(rotate_image(seg_slice_test), cmap="jet", alpha=0.5)
+    axs[1, 2].set_title("Test Segmentation Slice")
+    axs[1, 2].axis("off")
+
+    plt.tight_layout()  # 调整子图间距
+    plt.show()
+    plt.savefig(f"lbldata_test_fold{fold}.jpg", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # BCEWithLogitsLoss损失函数权重获取
+    train_class_weights = compute_class_weight(
+        "balanced",
+        classes=np.unique([0, 1]),
+        y=[int(i["label"]) for i in lbl_dataset.data_train],
     )
-    print(
-        lbl_dataset.data_val[0]["image"].shape,
-        lbl_dataset.data_val[0]["seg"].shape,
-        lbl_dataset.data_val[0]["label"],
+    val_class_weights = compute_class_weight(
+        "balanced",
+        classes=np.unique([0, 1]),
+        y=[int(i["label"]) for i in lbl_dataset.data_val],
     )
-    print(
-        lbl_dataset.data_test[0]["image"].shape,
-        lbl_dataset.data_test[0]["seg"].shape,
-        lbl_dataset.data_test[0]["label"],
+    test_class_weights = compute_class_weight(
+        "balanced",
+        classes=np.unique([0, 1]),
+        y=[int(i["label"]) for i in lbl_dataset.data_test],
     )
+    print(train_class_weights)
+    # 将权重转换为 PyTorch 张量
+    weight_tensor = torch.tensor(train_class_weights, dtype=torch.float)
+    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=weight_tensor[1])
+
     first_data = next(iter(lbl_dataset.train_dataloader()))
     # 输出训练集数据第一个图像跟标签是否都存在
     print(first_data["image"].shape, lbl_dataset.train_images[0])

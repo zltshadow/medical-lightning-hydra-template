@@ -22,7 +22,7 @@ class ViT(nets.ViT):
 
 if __name__ == "__main__":
     model = ViT(
-        img_size=[256, 256, 32],
+        img_size=[128, 128, 32],
         patch_size=[16, 16, 16],
         spatial_dims=3,
         in_channels=1,
@@ -31,6 +31,6 @@ if __name__ == "__main__":
         dropout_rate=0,
         post_activation=None,
     )
-    img = torch.randn(2, 1, 256, 256, 32)
+    img = torch.randn(2, 1, 128, 128, 32)
     preds = model(img)
     print(preds[0].shape)

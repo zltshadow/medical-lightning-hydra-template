@@ -12,7 +12,7 @@ scheduler:
   _target_: monai.optimizers.WarmupCosineSchedule
   _partial_: true
   warmup_steps: 10
-  t_total: 200
+  t_total: 1000
 
 # compile model for faster training with pytorch 2.0
 compile: false

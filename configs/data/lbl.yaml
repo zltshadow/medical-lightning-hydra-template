@@ -1,9 +1,9 @@
 _target_: src.data.lbl_datamodule.LBLDataModule
 fold: 0
 sequence_idx: "0000"
-data_dir: /data/zlt/projects/nnunetv2/nnUNet_raw/Dataset803_LBL_raw_BJTR/
-dataset_json: /data/zlt/projects/nnunetv2/nnUNet_raw/Dataset803_LBL_raw_BJTR/dataset.json
-splits_final_json: /data/zlt/projects/nnunetv2/nnUNet_raw/Dataset803_LBL_raw_BJTR/splits_final.json
+data_dir: /data/zlt/projects/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/
+dataset_json: /data/zlt/projects/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/dataset.json
+splits_final_json: /data/zlt/projects/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/splits_final.json
 # data_dir: /mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/
 # dataset_json: /mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/dataset.json
 # splits_final_json: /mnt/e/projects/BIT/data/nnUNet_datasets/nnUNet_raw/Dataset803_LBL_raw_BJTR/splits_final.json

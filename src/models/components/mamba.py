@@ -213,6 +213,6 @@ class nnMambaEncoder(nn.Module):
 
 if __name__ == "__main__":
     model = nnMambaEncoder(number_classes=2).to("cuda")
-    img = torch.randn(2, 1, 256, 256, 32).to("cuda")
+    img = torch.randn(2, 1, 128, 128, 32).to("cuda")
     preds = model(img)
     print(preds[0].shape)
