@@ -11,8 +11,8 @@ scheduler:
   # patience: 10
   _target_: monai.optimizers.WarmupCosineSchedule
   _partial_: true
-  warmup_steps: 10
-  t_total: 1000
+  warmup_steps: ${trainer.check_val_every_n_epoch}
+  t_total: ${trainer.max_epochs}
 
 # compile model for faster training with pytorch 2.0
 compile: false

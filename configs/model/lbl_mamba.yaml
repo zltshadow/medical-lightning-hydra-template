@@ -2,6 +2,8 @@ defaults:
   - _self_
   - optimizer
 
+model_name: nnMamba
+
 _target_: src.models.lbl_module.LBLLitModule
 
 net:

@@ -2,7 +2,7 @@ import torch
 from monai.networks.nets import ResNet, resnet50
 
 
-class ResNet50(ResNet):
+class ResNet(ResNet):
     """A simple fully-connected neural net for computing predictions."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -27,10 +27,24 @@ class ResNet50(ResNet):
 
 
 if __name__ == "__main__":
-    model = ResNet50(
+    # resnet50
+    model = ResNet(
         block="bottleneck",
         layers=[3, 4, 6, 3],
         block_inplanes=[64, 128, 256, 512],
+        shortcut_type="B",
+        bias_downsample=False,
+        spatial_dims=3,
+        n_input_channels=1,
+        num_classes=2,
+    )
+    # resnet34
+    model = ResNet(
+        block="basic",
+        layers=[3, 4, 6, 3],
+        block_inplanes=[64, 128, 256, 512],
+        shortcut_type="A",
+        bias_downsample=True,
         spatial_dims=3,
         n_input_channels=1,
         num_classes=2,

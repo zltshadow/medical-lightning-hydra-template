@@ -55,6 +55,7 @@ class LBLLitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
+        model_name: str = "",
     ) -> None:
         """Initialize a `LBLLitModule`.
 
@@ -140,11 +141,13 @@ class LBLLitModule(LightningModule):
         loss = self.criterion(logits, y)
         # 应用softmax函数，dim=1表示对每一行进行操作：
         probs = F.softmax(logits, dim=1)
+        # 提取正类概率（正类的索引为 1）
+        positive_class_probs = probs[:, 1]
         # one_hot_y = F.one_hot(y, num_classes=2).float()
         # # BCE需要使用one_hot
         # loss = self.criterion(logits, one_hot_y)
         preds = torch.argmax(logits, dim=1)
-        return loss, probs, preds, y
+        return loss, positive_class_probs, preds, y
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -161,7 +164,7 @@ class LBLLitModule(LightningModule):
         # update and log metrics
         self.train_loss(loss)
         self.train_acc(preds, targets)
-        self.train_auc(preds, targets)
+        self.train_auc(probs, targets)
         self.log(
             "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
         )
@@ -193,7 +196,7 @@ class LBLLitModule(LightningModule):
         # update and log metrics
         self.val_loss(loss)
         self.val_acc(preds, targets)
-        self.val_auc(preds, targets)
+        self.val_auc(probs, targets)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
@@ -227,7 +230,7 @@ class LBLLitModule(LightningModule):
         # update and log metrics
         self.test_loss(loss)
         self.test_acc(preds, targets)
-        self.test_auc(preds, targets)
+        self.test_auc(probs, targets)
         self.test_precision(preds, targets)
         self.test_recall(preds, targets)
         self.test_f1(preds, targets)

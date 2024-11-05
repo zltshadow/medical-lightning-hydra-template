@@ -46,4 +46,4 @@ test: True
 ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
-seed: 42
+seed: ${data.seed}

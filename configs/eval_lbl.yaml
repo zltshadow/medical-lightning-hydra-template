@@ -16,4 +16,6 @@ task_name: "eval"
 tags: ['mamba']
 
 # passing checkpoint path is necessary for evaluation
-ckpt_path: ${paths.root_dir}/logs/train/runs/2024-10-30_20-19-06/checkpoints/epoch_029.ckpt
+ckpt_path: ${paths.root_dir}/logs/train/runs/2024-11-05_18-09-55/checkpoints/epoch_064.ckpt
+
+seed: ${data.seed}
