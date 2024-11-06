@@ -342,13 +342,12 @@ class LBLDataModule(LightningDataModule):
         n_splits = 5
         skf = StratifiedKFold(n_splits=n_splits)
         splits = list(skf.split(train_val_df, train_val_df["病理级别"].values))
+        train_df = train_val_df
+        val_df = test_df
         if fold in range(n_splits):
             train_index, val_index = splits[fold]
             train_df = train_val_df.iloc[train_index]
             val_df = train_val_df.iloc[val_index]
-        elif fold == "train_val":
-            train_df = train_val_df
-            val_df = test_df
 
         # image_loader = Compose(
         #     [
@@ -413,26 +412,40 @@ class LBLDataModule(LightningDataModule):
                     seq_name
                 ] = f"{data_root}/{patient_dir}/{seq_name}/{seg_prefix}/{seq_name}_Label.nii.gz"
                 self.test_rawlist[patient_dir][self.label_prefix] = data["病理级别"]
-        # # 外部验证集
-        # self.extest_rawlist = {}
-        # extest_dir = "/data/zlt/projects/data/LBL_raw"
-        # extest_df = pd.read_excel(f"{extest_dir}/LBL_raw.xlsx")
-        # extest_df = extest_df[extest_df["来源医院"].isin(["武汉协和"])]
-        # for _, data in extest_df.iterrows():
-        #     patient_dir = data["输出文件夹"]
-        #     self.extest_rawlist[patient_dir] = {}
-        #     self.extest_rawlist[patient_dir][self.image_prefix] = {}
-        #     self.extest_rawlist[patient_dir][self.seg_prefix] = {}
-        #     for seq_name in self.sequences.values():
-        #         self.extest_rawlist[patient_dir][self.image_prefix][
-        #             seq_name
-        #         ] = f"{extest_dir}/{patient_dir}/{seq_name}/{image_prefix}/{seq_name}.nii.gz"
-        #         self.extest_rawlist[patient_dir][self.seg_prefix][
-        #             seq_name
-        #         ] = f"{extest_dir}/{patient_dir}/{seq_name}/{seg_prefix}/{seq_name}_Label.nii.gz"
-        #         self.extest_rawlist[patient_dir][self.label_prefix] = data["病理级别"]
+        if fold == "extest":
+            # 外部验证集
+            self.extest_rawlist = {}
+            dataset_name = "LBL_raw_extest"
+            extest_dir = f"/data/zlt/projects/data/{dataset_name}/"
+            extest_df = pd.read_excel(f"{extest_dir}/{dataset_name}.xlsx")
+            # extest_df = extest_df[extest_df["来源医院"].isin(["吉大二院"])]
+            for _, data in extest_df.iterrows():
+                patient_dir = data["输出文件夹"]
+                self.extest_rawlist[patient_dir] = {}
+                self.extest_rawlist[patient_dir][self.image_prefix] = {}
+                self.extest_rawlist[patient_dir][self.seg_prefix] = {}
+                for seq_name in self.sequences.values():
+                    # 特殊处理湘雅二院的T2,只有T2_AX_FS(12，14，22是nFS)
+                    if (
+                        data["来源医院"] in ["湘雅二院"]
+                        and seq_name == "T2_AX_nFS"
+                        and not os.path.exists(
+                            f"{extest_dir}/{patient_dir}/{seq_name}/{seg_prefix}/{seq_name}_Label.nii.gz"
+                        )
+                    ):
+                        seq_name = "T2_AX_FS"
 
-        # self.test_rawlist = self.extest_rawlist
+                    self.extest_rawlist[patient_dir][self.image_prefix][
+                        seq_name
+                    ] = f"{extest_dir}/{patient_dir}/{seq_name}/{image_prefix}/{seq_name}.nii.gz"
+                    self.extest_rawlist[patient_dir][self.seg_prefix][
+                        seq_name
+                    ] = f"{extest_dir}/{patient_dir}/{seq_name}/{seg_prefix}/{seq_name}_Label.nii.gz"
+                    self.extest_rawlist[patient_dir][self.label_prefix] = data[
+                        "病理级别"
+                    ]
+
+            self.test_rawlist = self.extest_rawlist
 
         # # 这是按序列划分的
         # for seq_name in self.sequences.values():
@@ -763,7 +776,8 @@ if __name__ == "__main__":
 
     # 定义旋转函数
     def rotate_image(image):
-        return np.rot90(image, k=1, axes=(0, 1))
+        return np.transpose(image, (1, 0))
+        # return np.rot90(image, k=1, axes=(0, 1))
 
     # 训练集
     axs[0, 0].imshow(rotate_image(image_slice_train), cmap="gray")
@@ -794,7 +808,7 @@ if __name__ == "__main__":
 
     plt.tight_layout()  # 调整子图间距
     plt.show()
-    plt.savefig(f"lbldata_test_fold{fold}.jpg", dpi=300, bbox_inches="tight")
+    plt.savefig(f"lbldata_test_fold_{fold}.jpg", dpi=300, bbox_inches="tight")
     plt.close()
 
     # BCEWithLogitsLoss损失函数权重获取
