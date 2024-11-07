@@ -188,7 +188,11 @@ class LoadMulImaged(MapTransform):
                 t1_data = self._loader(d[key][0], reader)
                 t2_data = self._loader(d[key][1], reader)
                 t1c_data = self._loader(d[key][2], reader)
-                preprocessor = Compose([Resize(spatial_size=(512, 512, 16))])
+                if key == "seg_path":
+                    mode = "nearest"
+                else:
+                    mode = "bilinear"
+                preprocessor = Compose([Resize(spatial_size=(512, 512, 16), mode=mode)])
                 preprocess_t1_data = preprocessor(t1_data)
                 preprocess_t2_data = preprocessor(t2_data)
                 preprocess_t1c_data = preprocessor(t1c_data)
@@ -314,13 +318,20 @@ class LBLDataModule(LightningDataModule):
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
-
+        dataset_name = "LBL_raw_BJTR"
+        dataset_name = "LBL_all_tumor"
+        dataset_name = "LBL_all"
         all_data_df = pd.read_excel(
-            "/data/zlt/projects/data/LBL_raw_BJTR/LBL_raw_BJTR.xlsx"
+            f"/data/zlt/projects/data/{dataset_name}/{dataset_name}.xlsx"
         )
+        all_data_df = all_data_df[
+            (all_data_df["来源医院"].isin(["北京同仁"]))
+            # & (all_data_df["flag"] == 1)
+            # & (all_data_df["MagneticFieldStrength"] != 1.5)
+        ]
 
-        # 划分训练_验证180例、测试集44例
-        split_ratio = 180
+        # 划分训练_验证224*0.8=179例、测试集224*0.2=45例
+        split_ratio = 0.8
         train_val_df, test_df = train_test_split(
             all_data_df,
             train_size=split_ratio,
@@ -360,7 +371,7 @@ class LBLDataModule(LightningDataModule):
         #     lazy=True,
         # )
 
-        data_root = "/data/zlt/projects/data/LBL_raw_BJTR"
+        data_root = f"/data/zlt/projects/data/{dataset_name}"
         image_prefix = "Nii"
         seg_prefix = "Label"
         self.image_prefix = "image"
@@ -412,13 +423,18 @@ class LBLDataModule(LightningDataModule):
                     seq_name
                 ] = f"{data_root}/{patient_dir}/{seq_name}/{seg_prefix}/{seq_name}_Label.nii.gz"
                 self.test_rawlist[patient_dir][self.label_prefix] = data["病理级别"]
-        if fold == "extest":
+        if fold in ["extest", "train_val"]:
             # 外部验证集
             self.extest_rawlist = {}
-            dataset_name = "LBL_raw_extest"
+            # dataset_name = "LBL_raw_extest"
+            # extest_dir = f"/data/zlt/projects/data/{dataset_name}/"
+            # extest_df = pd.read_excel(f"{extest_dir}/{dataset_name}.xlsx")
+
             extest_dir = f"/data/zlt/projects/data/{dataset_name}/"
-            extest_df = pd.read_excel(f"{extest_dir}/{dataset_name}.xlsx")
-            # extest_df = extest_df[extest_df["来源医院"].isin(["吉大二院"])]
+            extest_df = pd.read_excel(
+                f"/data/zlt/projects/data/{dataset_name}/{dataset_name}.xlsx"
+            )
+            extest_df = extest_df[extest_df["来源医院"].isin(["吉大二院", "湘雅二院"])]
             for _, data in extest_df.iterrows():
                 patient_dir = data["输出文件夹"]
                 self.extest_rawlist[patient_dir] = {}
@@ -493,9 +509,44 @@ class LBLDataModule(LightningDataModule):
                     ensure_channel_first=True,
                 ),
                 NormalizeIntensityd(
-                    keys=["image", "seg"],
+                    keys=["image"],
                 ),
-                ToTensord(keys=["image", "seg", "label"], track_meta=False),
+                # range_z 围绕Z轴旋转，0.3弧度大约是17度， 度= 弧度 × π / 180
+                RandRotated(
+                    keys=["image", "seg"],
+                    range_x=0.0,
+                    range_y=0.0,
+                    range_z=0.3,
+                    prob=0.1,
+                    mode=["bilinear", "nearest"],
+                ),
+                # X轴翻转
+                RandFlipd(
+                    keys=["image", "seg"],
+                    prob=0.1,
+                    spatial_axis=[0],
+                ),
+                RandScaleIntensityd(
+                    keys=["image"],
+                    factors=0.1,
+                    prob=0.1,
+                ),
+                RandShiftIntensityd(
+                    keys=["image"],
+                    offsets=0.1,
+                    prob=0.1,
+                ),
+                RandZoomd(
+                    keys=["image", "seg"],
+                    min_zoom=0.9,
+                    max_zoom=1.1,
+                    prob=0.1,
+                    mode=["bilinear", "nearest"],
+                ),
+                ToTensord(
+                    keys=["image", "seg", "label"],
+                    track_meta=False,
+                ),
             ],
             lazy=True,
         )
@@ -507,9 +558,12 @@ class LBLDataModule(LightningDataModule):
                     ensure_channel_first=True,
                 ),
                 NormalizeIntensityd(
-                    keys=["image", "seg"],
+                    keys=["image"],
                 ),
-                ToTensord(keys=["image", "seg", "label"], track_meta=False),
+                ToTensord(
+                    keys=["image", "seg", "label"],
+                    track_meta=False,
+                ),
             ],
             lazy=True,
         )
@@ -521,9 +575,12 @@ class LBLDataModule(LightningDataModule):
                     ensure_channel_first=True,
                 ),
                 NormalizeIntensityd(
-                    keys=["image", "seg"],
+                    keys=["image"],
                 ),
-                ToTensord(keys=["image", "seg", "label"], track_meta=False),
+                ToTensord(
+                    keys=["image", "seg", "label"],
+                    track_meta=False,
+                ),
             ],
             lazy=True,
         )
@@ -651,7 +708,7 @@ class LBLDataModule(LightningDataModule):
             self.data_test = self.dataset_func(
                 data=test_data_list,
                 transform=self.test_transforms,
-                cache_rate=1,
+                cache_rate=1 if self.task_name == "eval" else 0,
             )
 
     def train_dataloader(self):
@@ -740,13 +797,13 @@ if __name__ == "__main__":
 
     # 获取训练、验证和测试集的第一个样本
     image_train = lbl_dataset.data_train[0]["image"][0]
-    seg_train = lbl_dataset.data_train[0]["seg"][0]
+    seg_train = lbl_dataset.data_train[0]["seg"][0].cpu().numpy().astype(np.int8)
 
     image_val = lbl_dataset.data_val[0]["image"][0]
-    seg_val = lbl_dataset.data_val[0]["seg"][0]
+    seg_val = lbl_dataset.data_val[0]["seg"][0].cpu().numpy().astype(np.int8)
 
     image_test = lbl_dataset.data_test[0]["image"][0]
-    seg_test = lbl_dataset.data_test[0]["seg"][0]
+    seg_test = lbl_dataset.data_test[0]["seg"][0].cpu().numpy().astype(np.int8)
 
     # 打印图像和分割的形状
     print("Train Image Shape:", image_train.shape)
@@ -776,7 +833,8 @@ if __name__ == "__main__":
 
     # 定义旋转函数
     def rotate_image(image):
-        return np.transpose(image, (1, 0))
+        return image
+        # return np.transpose(image, (1, 0))
         # return np.rot90(image, k=1, axes=(0, 1))
 
     # 训练集
@@ -810,6 +868,8 @@ if __name__ == "__main__":
     plt.show()
     plt.savefig(f"lbldata_test_fold_{fold}.jpg", dpi=300, bbox_inches="tight")
     plt.close()
+
+    print(f"save lbldata_test_fold_{fold}.jpg")
 
     # BCEWithLogitsLoss损失函数权重获取
     train_class_weights = compute_class_weight(
