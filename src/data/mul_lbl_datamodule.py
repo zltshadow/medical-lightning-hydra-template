@@ -511,38 +511,38 @@ class LBLDataModule(LightningDataModule):
                 NormalizeIntensityd(
                     keys=["image"],
                 ),
-                # range_z 围绕Z轴旋转，0.3弧度大约是17度， 度= 弧度 × π / 180
-                RandRotated(
-                    keys=["image", "seg"],
-                    range_x=0.0,
-                    range_y=0.0,
-                    range_z=0.3,
-                    prob=0.1,
-                    mode=["bilinear", "nearest"],
-                ),
-                # X轴翻转
-                RandFlipd(
-                    keys=["image", "seg"],
-                    prob=0.1,
-                    spatial_axis=[0],
-                ),
-                RandScaleIntensityd(
-                    keys=["image"],
-                    factors=0.1,
-                    prob=0.1,
-                ),
-                RandShiftIntensityd(
-                    keys=["image"],
-                    offsets=0.1,
-                    prob=0.1,
-                ),
-                RandZoomd(
-                    keys=["image", "seg"],
-                    min_zoom=0.9,
-                    max_zoom=1.1,
-                    prob=0.1,
-                    mode=["bilinear", "nearest"],
-                ),
+                # # range_z 围绕Z轴旋转，0.3弧度大约是17度， 度= 弧度 × π / 180
+                # RandRotated(
+                #     keys=["image", "seg"],
+                #     range_x=0.0,
+                #     range_y=0.0,
+                #     range_z=0.3,
+                #     prob=0.1,
+                #     mode=["bilinear", "nearest"],
+                # ),
+                # # X轴翻转
+                # RandFlipd(
+                #     keys=["image", "seg"],
+                #     prob=0.1,
+                #     spatial_axis=[0],
+                # ),
+                # RandScaleIntensityd(
+                #     keys=["image"],
+                #     factors=0.1,
+                #     prob=0.1,
+                # ),
+                # RandShiftIntensityd(
+                #     keys=["image"],
+                #     offsets=0.1,
+                #     prob=0.1,
+                # ),
+                # RandZoomd(
+                #     keys=["image", "seg"],
+                #     min_zoom=0.9,
+                #     max_zoom=1.1,
+                #     prob=0.1,
+                #     mode=["bilinear", "nearest"],
+                # ),
                 ToTensord(
                     keys=["image", "seg", "label"],
                     track_meta=False,
@@ -833,8 +833,8 @@ if __name__ == "__main__":
 
     # 定义旋转函数
     def rotate_image(image):
-        return image
-        # return np.transpose(image, (1, 0))
+        # return image
+        return np.transpose(image, (1, 0))
         # return np.rot90(image, k=1, axes=(0, 1))
 
     # 训练集
