@@ -1,6 +1,8 @@
 from typing import Any, Dict, List, Tuple
 
 import hydra
+import lightning as L
+import monai
 import rootutils
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
@@ -47,6 +49,10 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     :return: Tuple[dict, dict] with metrics and dict with all instantiated objects.
     """
     assert cfg.ckpt_path
+
+    if cfg.get("seed"):
+        L.seed_everything(cfg.seed, workers=True)
+        monai.utils.set_determinism(cfg.seed)
 
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)

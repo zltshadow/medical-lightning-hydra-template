@@ -9,7 +9,10 @@ _target_: src.models.lbl_module.LBLLitModule
 net:
   _target_: src.models.components.resnet.ResNet
   block: "basic"
+  # resnet34
   layers: [3, 4, 6, 3]
+  # resnet18
+  # layers: [2, 2, 2, 2]
   block_inplanes: [64, 128, 256, 512]
   shortcut_type: A
   bias_downsample: True

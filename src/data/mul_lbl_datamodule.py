@@ -321,6 +321,7 @@ class LBLDataModule(LightningDataModule):
         dataset_name = "LBL_raw_BJTR"
         dataset_name = "LBL_all_tumor"
         dataset_name = "LBL_all"
+        dataset_name = "LBL_all_reg"
         all_data_df = pd.read_excel(
             f"/data/zlt/projects/data/{dataset_name}/{dataset_name}.xlsx"
         )

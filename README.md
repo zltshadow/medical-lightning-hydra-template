@@ -1295,3 +1295,5 @@ You can override any parameter from command line like this
 ```bash
 python src/train.py trainer.max_epochs=20 data.batch_size=64
 ```
+
+CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mamba,cfuse1]" data.fold=train_val,0,1,2,3,4 model=lbl_mamba
