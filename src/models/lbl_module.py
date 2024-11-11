@@ -70,6 +70,7 @@ class LBLLitModule(LightningModule):
         self.save_hyperparameters(logger=False)
 
         self.net = net
+        self.model_name = model_name
 
         # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -107,6 +108,17 @@ class LBLLitModule(LightningModule):
         :param x: A tensor of images.
         :return: A tensor of logits.
         """
+        if self.model_name == "SFMamba":
+            # 计算最后一个维度的大小
+            last_dim_size = x.shape[-1]
+            # 计算每份的大小
+            chunk_size = last_dim_size // 3
+            # 分割最后一个维度
+            t1_sample = x[:, :, :, :, :chunk_size]
+            t2_sample = x[:, :, :, :, chunk_size : 2 * chunk_size]
+            t1c_sample = x[:, :, :, :, 2 * chunk_size :]
+            # print(t1_sample.shape, t2_sample.shape, t1c_sample.shape)
+            return self.net(t1_sample, t2_sample, t1c_sample)
         return self.net(x)
 
     def on_train_start(self) -> None:

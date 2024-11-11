@@ -192,7 +192,7 @@ class LoadMulImaged(MapTransform):
                     mode = "nearest"
                 else:
                     mode = "bilinear"
-                preprocessor = Compose([Resize(spatial_size=(512, 512, 16), mode=mode)])
+                preprocessor = Compose([Resize(spatial_size=(256, 256, 32), mode=mode)])
                 preprocess_t1_data = preprocessor(t1_data)
                 preprocess_t2_data = preprocessor(t2_data)
                 preprocess_t1c_data = preprocessor(t1c_data)

@@ -1,0 +1,13 @@
+defaults:
+  - _self_
+  - optimizer
+
+model_name: SFMamba
+
+_target_: src.models.lbl_module.LBLLitModule
+
+net:
+  _target_: src.models.components.sfmamba.MultiSeqMambaModel
+  in_channels: 1
+  stem_channels: 16
+  num_classes: 2

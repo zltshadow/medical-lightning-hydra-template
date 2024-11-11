@@ -1,8 +1,8 @@
 import torch
-from monai.networks.nets import ResNet, resnet50
+from monai.networks import nets
 
 
-class ResNet(ResNet):
+class ResNet(nets.ResNet):
     """A simple fully-connected neural net for computing predictions."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -51,4 +51,4 @@ if __name__ == "__main__":
     )
     img = torch.randn(2, 1, 128, 128, 32)
     preds = model(img)
-    print(preds[0].shape)
+    print(preds, preds[0].shape)

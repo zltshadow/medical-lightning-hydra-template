@@ -33,4 +33,4 @@ if __name__ == "__main__":
     )
     img = torch.randn(2, 1, 128, 128, 32)
     preds = model(img)
-    print(preds[0].shape)
+    print(preds, preds[0].shape)

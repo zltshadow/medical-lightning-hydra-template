@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mamba_ssm import Mamba
+from torchinfo import summary
 
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
@@ -78,17 +79,17 @@ class MambaLayer(nn.Module):
         self.dim = dim
         self.nin = conv1x1(dim, dim)
         self.nin2 = conv1x1(dim, dim)
-        self.norm2 = nn.BatchNorm3d(dim) # LayerNorm
+        self.norm2 = nn.BatchNorm3d(dim)  # LayerNorm
         self.relu2 = nn.ReLU(inplace=True)
         self.relu3 = nn.ReLU(inplace=True)
 
-        self.norm = nn.BatchNorm3d(dim) # LayerNorm
+        self.norm = nn.BatchNorm3d(dim)  # LayerNorm
         self.relu = nn.ReLU(inplace=True)
         self.mamba = Mamba(
             d_model=dim,  # Model dimension d_model
             d_state=d_state,  # SSM state expansion factor
             d_conv=d_conv,  # Local convolution width
-            expand=expand  # Block expansion factor
+            expand=expand,  # Block expansion factor
         )
 
     def forward(self, x):
@@ -120,7 +121,7 @@ class MambaSeq(nn.Module):
             d_model=dim,  # Model dimension d_model
             d_state=d_state,  # SSM state expansion factor
             d_conv=d_conv,  # Local convolution width
-            expand=expand  # Block expansion factor
+            expand=expand,  # Block expansion factor
         )
 
     def forward(self, x):
@@ -134,12 +135,19 @@ class MambaSeq(nn.Module):
         out = x_mamba.transpose(-1, -2).reshape(B, C, *img_dims)
         return out
 
+
 class DoubleConv(nn.Module):
 
     def __init__(self, in_ch, out_ch, stride=1, kernel_size=3):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv3d(in_ch, out_ch, kernel_size=kernel_size, stride=stride, padding=int(kernel_size / 2)),
+            nn.Conv3d(
+                in_ch,
+                out_ch,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=int(kernel_size / 2),
+            ),
             nn.BatchNorm3d(out_ch),
             nn.ReLU(inplace=True),
             nn.Conv3d(out_ch, out_ch, 3, padding=1, dilation=1),
@@ -155,38 +163,46 @@ class SingleConv(nn.Module):
 
     def __init__(self, in_ch, out_ch):
         super(SingleConv, self).__init__()
-        self.conv = nn.Sequential(nn.Conv3d(in_ch, out_ch, 3, padding=1), nn.BatchNorm3d(out_ch), nn.ReLU(inplace=True))
+        self.conv = nn.Sequential(
+            nn.Conv3d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm3d(out_ch),
+            nn.ReLU(inplace=True),
+        )
 
     def forward(self, input):
         return self.conv(input)
 
 
 class nnMambaEncoder(nn.Module):
-    def __init__(self, in_ch=1, channels=32, blocks=3, number_classes=1):
+    def __init__(self, in_ch=1, channels=32, blocks=3, num_classes=1):
         super(nnMambaEncoder, self).__init__()
         self.in_conv = DoubleConv(in_ch, channels, stride=2, kernel_size=3)
         self.mamba_layer_stem = MambaLayer(
             dim=channels,  # Model dimension d_model
             d_state=8,  # SSM state expansion factor
             d_conv=4,  # Local convolution width
-            expand=2  # Block expansion factor
+            expand=2,  # Block expansion factor
         )
 
         self.layer1 = make_res_layer(channels, channels * 2, blocks, stride=2)
         self.layer2 = make_res_layer(channels * 2, channels * 4, blocks, stride=2)
         self.layer3 = make_res_layer(channels * 4, channels * 8, blocks, stride=2)
 
-        self.pooling =  nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.pooling = nn.AdaptiveAvgPool3d((1, 1, 1))
 
         self.mamba_seq = MambaSeq(
-            dim=channels*2,  # Model dimension d_model
+            dim=channels * 2,  # Model dimension d_model
             d_state=8,  # SSM state expansion factor
             d_conv=2,  # Local convolution width
-            expand=2  # Block expansion factor
+            expand=2,  # Block expansion factor
         )
-        
-        self.mlp = nn.Sequential(nn.Linear(channels*14, channels), nn.ReLU(), nn.Dropout(0.5), nn.Linear(channels, number_classes))
 
+        self.mlp = nn.Sequential(
+            nn.Linear(channels * 14, channels),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(channels, num_classes),
+        )
 
     def forward(self, x):
         c1 = self.in_conv(x)
@@ -198,7 +214,14 @@ class nnMambaEncoder(nn.Module):
         pooled_c3_s = self.pooling(c3)
         pooled_c4_s = self.pooling(c4)
 
-        h_feature = torch.cat((pooled_c2_s.reshape(c1.shape[0], c1.shape[1]*2, 1), pooled_c3_s.reshape(c1.shape[0], c1.shape[1]*2, 2), pooled_c4_s.reshape(c1.shape[0], c1.shape[1]*2, 4)), dim=2)
+        h_feature = torch.cat(
+            (
+                pooled_c2_s.reshape(c1.shape[0], c1.shape[1] * 2, 1),
+                pooled_c3_s.reshape(c1.shape[0], c1.shape[1] * 2, 2),
+                pooled_c4_s.reshape(c1.shape[0], c1.shape[1] * 2, 4),
+            ),
+            dim=2,
+        )
 
         h_feature_att = self.mamba_seq(h_feature) + h_feature
         h_feature = h_feature_att.reshape(c1.shape[0], -1)
@@ -212,7 +235,8 @@ class nnMambaEncoder(nn.Module):
 
 
 if __name__ == "__main__":
-    model = nnMambaEncoder(number_classes=2).to("cuda")
+    model = nnMambaEncoder(num_classes=2).to("cuda")
     img = torch.randn(2, 1, 128, 128, 32).to("cuda")
+    summary(model, input_size=(2, 1, 128, 128, 32))
     preds = model(img)
-    print(preds[0].shape)
+    print(preds, preds[0].shape)

@@ -1296,4 +1296,16 @@ You can override any parameter from command line like this
 python src/train.py trainer.max_epochs=20 data.batch_size=64
 ```
 
-CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mamba,cfuse1]" data.fold=train_val,0,1,2,3,4 model=lbl_mamba
+```
+CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[sfmamba]" data.fold=train_val,0,1,2,3,4 model=lbl_sfmamba
+CUDA_VISIBLE_DEVICES=2 python -m src.train -m tags="[nnmamba]" data.fold=train_val,0,1,2,3,4 model=lbl_nnmamba
+CUDA_VISIBLE_DEVICES=3 python -m src.train -m tags="[resnet]" data.fold=train_val,0,1,2,3,4 model=lbl_resnet
+CUDA_VISIBLE_DEVICES=4 python -m src.train -m tags="[vit]" data.fold=train_val,0,1,2,3,4 model=lbl_vit
+```
+
+```
+CUDA_VISIBLE_DEVICES=1 python -m src.train tags="[sfmamba]" data.fold=train_val model=lbl_sfmamba
+CUDA_VISIBLE_DEVICES=2 python -m src.train tags="[nnmamba]" data.fold=train_val model=lbl_nnmamba
+CUDA_VISIBLE_DEVICES=3 python -m src.train tags="[resnet]" data.fold=train_val model=lbl_resnet
+CUDA_VISIBLE_DEVICES=4 python -m src.train tags="[vit]" data.fold=train_val model=lbl_vit
+```

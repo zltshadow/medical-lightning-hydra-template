@@ -7,6 +7,6 @@ model_name: nnMamba
 _target_: src.models.lbl_module.LBLLitModule
 
 net:
-  _target_: src.models.components.mamba.nnMambaEncoder
-  number_classes: 2
+  _target_: src.models.components.nnmamba.nnMambaEncoder
+  num_classes: 2
   
