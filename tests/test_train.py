@@ -86,6 +86,9 @@ def test_train_resume(tmp_path: Path, cfg_train: DictConfig) -> None:
     """
     with open_dict(cfg_train):
         cfg_train.trainer.max_epochs = 1
+        cfg_train.trainer.check_val_every_n_epoch = 1
+        cfg_train.callbacks.model_checkpoint.monitor = "val/acc"
+        cfg_train.callbacks.early_stopping.monitor = "val/acc"
 
     HydraConfig().set_config(cfg_train)
     metric_dict_1, _ = train(cfg_train)
@@ -97,6 +100,9 @@ def test_train_resume(tmp_path: Path, cfg_train: DictConfig) -> None:
     with open_dict(cfg_train):
         cfg_train.ckpt_path = str(tmp_path / "checkpoints" / "last.ckpt")
         cfg_train.trainer.max_epochs = 2
+        cfg_train.trainer.check_val_every_n_epoch = 1
+        cfg_train.callbacks.model_checkpoint.monitor = "val/acc"
+        cfg_train.callbacks.early_stopping.monitor = "val/acc"
 
     metric_dict_2, _ = train(cfg_train)
 

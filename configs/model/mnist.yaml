@@ -6,12 +6,22 @@ optimizer:
   lr: 0.001
   weight_decay: 0.0
 
+# scheduler:
+#   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+#   _partial_: true
+#   mode: min
+#   factor: 0.1
+#   patience: 10
 scheduler:
-  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  # _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  # _partial_: true
+  # mode: min
+  # factor: 0.1
+  # patience: 10
+  _target_: monai.optimizers.WarmupCosineSchedule
   _partial_: true
-  mode: min
-  factor: 0.1
-  patience: 10
+  warmup_steps: ${trainer.check_val_every_n_epoch}
+  t_total: ${trainer.max_epochs}
 
 net:
   _target_: src.models.components.simple_dense_net.SimpleDenseNet

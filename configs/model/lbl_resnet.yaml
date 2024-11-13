@@ -2,31 +2,32 @@ defaults:
   - _self_
   - optimizer
 
-model_name: ResNet34
+model_name: ResNet50
 
 _target_: src.models.lbl_module.LBLLitModule
 
-net:
-  _target_: src.models.components.resnet.ResNet
-  block: "basic"
-  # resnet34
-  layers: [3, 4, 6, 3]
-  # resnet18
-  # layers: [2, 2, 2, 2]
-  block_inplanes: [64, 128, 256, 512]
-  shortcut_type: A
-  bias_downsample: True
-  spatial_dims: 3
-  n_input_channels: 1
-  num_classes: 2
-
 # net:
 #   _target_: src.models.components.resnet.ResNet
-#   block: "bottleneck"
+#   block: "basic"
+#   # resnet34
 #   layers: [3, 4, 6, 3]
+#   # resnet18
+#   # layers: [2, 2, 2, 2]
 #   block_inplanes: [64, 128, 256, 512]
-#   shortcut_type: B
-#   bias_downsample: False
+#   shortcut_type: A
+#   bias_downsample: True
 #   spatial_dims: 3
 #   n_input_channels: 1
 #   num_classes: 2
+
+# resnet50
+net:
+  _target_: src.models.components.resnet.ResNet
+  block: "bottleneck"
+  layers: [3, 4, 6, 3]
+  block_inplanes: [64, 128, 256, 512]
+  shortcut_type: B
+  bias_downsample: False
+  spatial_dims: 3
+  n_input_channels: 1
+  num_classes: 2

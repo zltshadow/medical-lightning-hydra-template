@@ -27,6 +27,17 @@ class ResNet(nets.ResNet):
 
 
 if __name__ == "__main__":
+    # # resnet34
+    # model = ResNet(
+    #     block="basic",
+    #     layers=[3, 4, 6, 3],
+    #     block_inplanes=[64, 128, 256, 512],
+    #     shortcut_type="A",
+    #     bias_downsample=True,
+    #     spatial_dims=3,
+    #     n_input_channels=1,
+    #     num_classes=2,
+    # )
     # resnet50
     model = ResNet(
         block="bottleneck",
@@ -38,17 +49,6 @@ if __name__ == "__main__":
         n_input_channels=1,
         num_classes=2,
     )
-    # resnet34
-    model = ResNet(
-        block="basic",
-        layers=[3, 4, 6, 3],
-        block_inplanes=[64, 128, 256, 512],
-        shortcut_type="A",
-        bias_downsample=True,
-        spatial_dims=3,
-        n_input_channels=1,
-        num_classes=2,
-    )
-    img = torch.randn(2, 1, 128, 128, 32)
+    img = torch.randn(2, 1, 256, 256, 32)
     preds = model(img)
     print(preds, preds[0].shape)

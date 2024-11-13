@@ -2,7 +2,7 @@ from heapq import _heapify_max
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mamba_ssm import Mamba
+from mamba_ssm import Mamba, Mamba2
 from torchinfo import summary
 
 
@@ -91,6 +91,13 @@ class MambaLayer(nn.Module):
             d_conv=d_conv,  # Local convolution width
             expand=expand,  # Block expansion factor
         )
+        # self.mamba = Mamba2(
+        #     d_model=dim,  # Model dimension d_model
+        #     d_state=8,  # SSM state expansion factor
+        #     d_conv=2,  # Local convolution width
+        #     expand=2,  # Block expansion factor
+        #     headdim=8,
+        # )
 
     def forward(self, x):
         B, C = x.shape[:2]
@@ -123,6 +130,13 @@ class MambaSeq(nn.Module):
             d_conv=d_conv,  # Local convolution width
             expand=expand,  # Block expansion factor
         )
+        # self.mamba = Mamba2(
+        #     d_model=dim,  # Model dimension d_model
+        #     d_state=8,  # SSM state expansion factor
+        #     d_conv=2,  # Local convolution width
+        #     expand=2,  # Block expansion factor
+        #     headdim=8,
+        # )
 
     def forward(self, x):
         B, C = x.shape[:2]
@@ -236,7 +250,7 @@ class nnMambaEncoder(nn.Module):
 
 if __name__ == "__main__":
     model = nnMambaEncoder(num_classes=2).to("cuda")
-    img = torch.randn(2, 1, 128, 128, 32).to("cuda")
-    summary(model, input_size=(2, 1, 128, 128, 32))
+    img = torch.randn(2, 1, 256, 256, 96).to("cuda")
+    summary(model, input_size=(2, 1, 256, 256, 96))
     preds = model(img)
     print(preds, preds[0].shape)
