@@ -4,15 +4,16 @@ optimizer:
   lr: 1e-5
 
 scheduler:
-  # _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-  # _partial_: true
-  # mode: min
-  # factor: 0.1
-  # patience: 10
-  _target_: monai.optimizers.WarmupCosineSchedule
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
   _partial_: true
-  warmup_steps: ${trainer.check_val_every_n_epoch}
-  t_total: ${trainer.max_epochs}
+  mode: min
+  factor: 0.5
+  patience: 10
+  # _target_: monai.optimizers.WarmupCosineSchedule
+  # _partial_: true
+  # warmup_steps: ${trainer.check_val_every_n_epoch}
+  # t_total: ${trainer.max_epochs}
 
+loss_name: bce
 # compile model for faster training with pytorch 2.0
 compile: false

@@ -1,5 +1,6 @@
 import torch
 from monai.networks import nets
+from torchinfo import summary
 
 
 class ResNet(nets.ResNet):
@@ -27,6 +28,7 @@ class ResNet(nets.ResNet):
 
 
 if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # # resnet34
     # model = ResNet(
     #     block="basic",
@@ -48,7 +50,8 @@ if __name__ == "__main__":
         spatial_dims=3,
         n_input_channels=1,
         num_classes=2,
-    )
-    img = torch.randn(2, 1, 256, 256, 32)
+    ).to(device)
+    img = torch.randn(2, 1, 256, 256, 32).to(device)
+    summary(model=model, input_size=img.shape)
     preds = model(img)
     print(preds, preds[0].shape)

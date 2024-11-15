@@ -7,7 +7,7 @@ defaults:
   - data: lbl
   - model: lbl_sfmamba
   - callbacks: default
-  - logger: tensorboard # set logger here or use command line (e.g. `python train.py logger=tensorboard` many_loggers)
+  - logger: many_loggers # set logger here or use command line (e.g. `python train.py logger=tensorboard` many_loggers)
   - trainer: gpu
   - paths: default
   - extras: default

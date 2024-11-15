@@ -12,7 +12,7 @@ devices: 1
 precision: 16-mixed
 
 # perform a validation loop every N training epochs
-check_val_every_n_epoch: 5
+check_val_every_n_epoch: 1
 # check in one epoch
 # val_check_interval: 0.05
 

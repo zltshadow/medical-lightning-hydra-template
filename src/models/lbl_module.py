@@ -56,6 +56,7 @@ class LBLLitModule(LightningModule):
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
         model_name: str = "",
+        loss_name: str = "ce",
     ) -> None:
         """Initialize a `LBLLitModule`.
 
@@ -71,11 +72,14 @@ class LBLLitModule(LightningModule):
 
         self.net = net
         self.model_name = model_name
+        self.loss_name = loss_name
 
         # loss function
-        self.criterion = torch.nn.CrossEntropyLoss()
-        # weight_tensor = torch.tensor([0.68965517, 1.81818182], dtype=torch.float)
-        # self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=weight_tensor)
+        if loss_name == "ce":
+            self.criterion = torch.nn.CrossEntropyLoss()
+        elif loss_name == "bce":
+            weight_tensor = torch.tensor([0.68965517, 1.81818182], dtype=torch.float)
+            self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=weight_tensor)
 
         # metric objects for calculating and averaging accuracy across batches
         self.train_acc = BinaryAccuracy()
@@ -150,14 +154,16 @@ class LBLLitModule(LightningModule):
         x = image
         y = label
         logits = self.forward(x)
-        loss = self.criterion(logits, y)
+        if self.loss_name == "ce":
+            loss = self.criterion(logits, y)
+        if self.loss_name == "bce":
+            one_hot_y = F.one_hot(y, num_classes=2).float()
+            # BCE需要使用one_hot
+            loss = self.criterion(logits, one_hot_y)
         # 应用softmax函数，dim=1表示对每一行进行操作：
         probs = F.softmax(logits, dim=1)
         # 提取正类概率（正类的索引为 1）
         positive_class_probs = probs[:, 1]
-        # one_hot_y = F.one_hot(y, num_classes=2).float()
-        # # BCE需要使用one_hot
-        # loss = self.criterion(logits, one_hot_y)
         preds = torch.argmax(logits, dim=1)
         return loss, positive_class_probs, preds, y
 

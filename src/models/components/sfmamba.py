@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Optional, Tuple
 import torch
 import torch.nn as nn
@@ -8,31 +9,91 @@ from monai.utils import pytorch_after
 from src.utils.utils import add_torch_shape_forvs
 from mamba_ssm import Mamba, Mamba2
 from torchinfo import summary
+import collections.abc
+from itertools import repeat
+
+
+# From PyTorch internals
+def _ntuple(n):
+    def parse(x):
+        if isinstance(x, collections.abc.Iterable) and not isinstance(x, str):
+            return tuple(x)
+        return tuple(repeat(x, n))
+
+    return parse
+
+
+to_2tuple = _ntuple(2)
+
+
+class Mlp(nn.Module):
+    """MLP as used in Vision Transformer, MLP-Mixer and related networks"""
+
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        norm_layer=None,
+        bias=True,
+        drop=0.0,
+        use_conv=False,
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        bias = to_2tuple(bias)
+        drop_probs = to_2tuple(drop)
+        linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
+
+        self.fc1 = linear_layer(in_features, hidden_features, bias=bias[0])
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.norm = (
+            norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
+        )
+        self.fc2 = linear_layer(hidden_features, out_features, bias=bias[1])
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop1(x)
+        x = self.norm(x)
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
 
 
 class ConvStem(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ConvStem, self).__init__()
-        self.conv = nn.Conv3d(
-            in_channels, out_channels, kernel_size=3, stride=2, padding=1
+        self.conv = nn.Sequential(
+            nn.Conv3d(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+            ),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(out_channels, out_channels, 3, padding=1),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True),
         )
-        self.bn = nn.BatchNorm3d(out_channels)
-        self.relu = nn.ReLU()
 
     def forward(self, x):
-        return self.relu(self.bn(self.conv(x)))
+        return self.conv(x)
 
 
 class MambaLayer(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
-        self.nin = nn.Conv3d(
-            in_channels=dim, out_channels=dim, kernel_size=1, stride=1, bias=False
-        )
-        self.nin2 = nn.Conv3d(
-            in_channels=dim, out_channels=dim, kernel_size=1, stride=1, bias=False
-        )
+        expand = 2
+        headdim = dim * expand // 8
         # self.mamba = Mamba(
         #     d_model=dim,  # Model dimension d_model
         #     d_state=8,  # SSM state expansion factor
@@ -41,15 +102,14 @@ class MambaLayer(nn.Module):
         # )
         self.mamba = Mamba2(
             d_model=dim,  # Model dimension d_model
-            d_state=8,  # SSM state expansion factor
-            d_conv=2,  # Local convolution width
+            d_state=128,  # SSM state expansion factor
+            d_conv=4,  # Local convolution width
             expand=2,  # Block expansion factor
-            headdim=64,
+            headdim=headdim,
         )
 
     def forward(self, x):
         B, C = x.shape[:2]
-        x = self.nin(x)
         act_x = x
         assert C == self.dim
         n_tokens = x.shape[2:].numel()
@@ -58,43 +118,45 @@ class MambaLayer(nn.Module):
         x_mamba = self.mamba(x_flat)
         out = x_mamba.transpose(-1, -2).reshape(B, C, *img_dims)
         out += act_x
-        out = self.nin2(out)
         return out
 
 
 class MSFEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels, scales=[3, 5, 7], downsample_rate=2):
+    def __init__(self, in_channels, out_channels, scales=[3, 5, 7]):
         super(MSFEncoder, self).__init__()
-        # Multi-scale convolutions
-        self.multi_scale_convs = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Conv3d(in_channels, out_channels, kernel_size=s, padding=s // 2),
-                    nn.BatchNorm3d(out_channels),
-                    nn.ReLU(inplace=True),
-                )
-                for s in scales
-            ]
-        )
-        # 有128通道后再进行mamba提取，即最后一层encoder
-        if out_channels > 256:
-            self.mamba = MambaLayer(dim=out_channels)
+        self.out_channels = out_channels
+        # 有128通道后再进行mamba提取，即最后两层encoder,最后两层不用卷积
+        if self.out_channels >= 128:
+            self.mamba = MambaLayer(dim=in_channels)
         else:
-            self.mamba = nn.Sequential()
-        # 1x1 convolution to fuse channels after concatenation of multi-scale features
-        self.fusion_conv = nn.Sequential(
-            nn.Conv3d(out_channels * len(scales), out_channels, kernel_size=1),
-            nn.BatchNorm3d(out_channels),
-            nn.ReLU(inplace=True),
-        )
+            # Multi-scale convolutions
+            self.multi_scale_convs = nn.ModuleList(
+                [
+                    nn.Sequential(
+                        nn.Conv3d(
+                            in_channels, in_channels, kernel_size=s, padding=s // 2
+                        ),
+                        nn.BatchNorm3d(in_channels),
+                        nn.ReLU(inplace=True),
+                    )
+                    for s in scales
+                ]
+            )
+
+            # 1x1 convolution to fuse channels after concatenation of multi-scale features
+            self.fusion_conv = nn.Sequential(
+                nn.Conv3d(in_channels * len(scales), in_channels, kernel_size=1),
+                nn.BatchNorm3d(in_channels),
+                nn.ReLU(inplace=True),
+            )
 
         # Downsampling layer to reduce spatial dimensions
         self.downsample = nn.Sequential(
             nn.Conv3d(
-                out_channels,
+                in_channels,
                 out_channels,
                 kernel_size=3,
-                stride=downsample_rate,
+                stride=2,
                 padding=1,
                 bias=False,
             ),
@@ -103,12 +165,16 @@ class MSFEncoder(nn.Module):
         )
 
     def forward(self, x):
-        # Apply each scale and concatenate along the channel dimension
-        features = [conv(x) for conv in self.multi_scale_convs]
-        fused = torch.cat(features, dim=1)  # Concatenate along channels
-        fused = self.fusion_conv(fused)  # Reduce channels back to `out_channels`
-        mamba_res = self.mamba(fused)
-        downscaled = self.downsample(mamba_res)  # Downsample spatially
+        if self.out_channels >= 128:
+            fused = x
+            mamba_res = self.mamba(fused)
+            downscaled = self.downsample(mamba_res)  # Downsample spatially
+        else:
+            # Apply each scale and concatenate along the channel dimension
+            features = [conv(x) for conv in self.multi_scale_convs]
+            fused = torch.cat(features, dim=1)  # Concatenate along channels
+            fused = self.fusion_conv(fused)  # Reduce channels back to `out_channels`
+            downscaled = self.downsample(fused)  # Downsample spatially
         return downscaled
 
 
@@ -119,7 +185,7 @@ class FeatureExtractor(nn.Module):
         out_channels_2 = in_channels * 2**2
         out_channels_3 = in_channels * 2**3
         out_channels_4 = in_channels * 2**4
-        # Progressive encoding layers with downsampling
+
         self.msf_encoder1 = MSFEncoder(
             in_channels=in_channels, out_channels=out_channels_1
         )
@@ -133,7 +199,6 @@ class FeatureExtractor(nn.Module):
             in_channels=out_channels_3, out_channels=out_channels_4
         )
 
-        # Shortcut connections with matching downsampling to align with encoder outputs
         self.shortcut_convs = nn.ModuleList(
             [
                 nn.Conv3d(
@@ -304,6 +369,13 @@ class CrossModalAttention(nn.Module):
         )
         self.input_size = input_size
 
+        mlp_ratio = 4
+        drop_out_rate = 0.2
+        mlp_hidden_dim = int(hidden_size * mlp_ratio)
+        self.mlp = Mlp(
+            in_features=hidden_size, hidden_features=mlp_hidden_dim, drop=drop_out_rate, norm_layer=nn.LayerNorm
+        )
+
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None):
         """
         Args:
@@ -361,6 +433,7 @@ class CrossModalAttention(nn.Module):
         x = self.out_rearrange(x)
         x = self.out_proj(x)
         x = self.drop_output(x)
+        x = self.mlp(x)
         return x
 
 
@@ -380,15 +453,22 @@ class MambaFusionBlock(nn.Module):
         # d_model * expand / headdim 是 8 的 倍数
         self.mamba = Mamba2(
             d_model=dim,  # Model dimension d_model
-            d_state=8,  # SSM state expansion factor
-            d_conv=2,  # Local convolution width
+            d_state=128,  # SSM state expansion factor
+            d_conv=4,  # Local convolution width
             expand=2,  # Block expansion factor
             headdim=64,
+        )
+        mlp_ratio = 4
+        drop_out_rate = 0.2
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(
+            in_features=dim, hidden_features=mlp_hidden_dim, drop=drop_out_rate, norm_layer=nn.LayerNorm
         )
 
     def forward(self, x):
         x_mamba = self.mamba(x) + x
         out = x_mamba
+        out = self.mlp(out)
         return out
 
 
@@ -397,13 +477,8 @@ class ClsHead(nn.Module):
         super(ClsHead, self).__init__()
         # Pooling layer to aggregate sequence information
         self.pooling = nn.AdaptiveAvgPool1d(1)
-
         # Fully connected layers
-        self.fc1 = nn.Linear(input_dim, 1024)
-        self.norm1 = nn.LayerNorm(1024)  # Normalization after the first linear layer
-        self.fc2 = nn.Linear(1024, num_classes)
-        self.dropout = nn.Dropout(0.5)
-        self.activation = nn.ReLU()
+        self.fc = nn.Linear(input_dim, num_classes)
 
     def forward(self, x):
         # x: [batch_size, sequence_length, feature_dim] -> [6, 512, 256]
@@ -413,9 +488,7 @@ class ClsHead(nn.Module):
         x = self.pooling(x).squeeze(-1)  # [batch_size, feature_dim]
 
         # Classification layers
-        x = self.dropout(self.activation(self.fc1(x)))  # [batch_size, 128]
-        x = self.norm1(x)  # Normalize after activation
-        x = self.fc2(x)  # [batch_size, num_classes]
+        x = self.fc(x)
         return x
 
 
@@ -437,8 +510,8 @@ class MultiSeqMambaModel(nn.Module):
         # Cross-modal attention block (hidden size is adjustable based on encoder channels and model design)
         self.cross_modal_attn_block = CrossModalAttention(
             hidden_size=embed_dim,
-            num_heads=8,
-            dropout_rate=0.5,
+            num_heads=16,
+            dropout_rate=0.1,
         )
 
         # Mamba Fusion Block
@@ -447,13 +520,13 @@ class MultiSeqMambaModel(nn.Module):
         # Classification Head
         self.cls_head = ClsHead(input_dim=embed_dim, num_classes=num_classes)
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv3d):
-                nn.init.kaiming_normal_(
-                    torch.as_tensor(m.weight), mode="fan_out", nonlinearity="relu"
-                )
-            elif isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(torch.as_tensor(m.bias), 0)
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv3d):
+        #         nn.init.kaiming_normal_(
+        #             torch.as_tensor(m.weight), mode="fan_out", nonlinearity="relu"
+        #         )
+        #     elif isinstance(m, nn.Linear) and m.bias is not None:
+        #         nn.init.constant_(torch.as_tensor(m.bias), 0)
 
     def forward(self, t1, t2, t1c):
         # Move tensors through ConvStem
@@ -500,7 +573,7 @@ if __name__ == "__main__":
     in_channels = 1  # Single channel for MRI inputs (grayscale)
     depth, height, width = 256, 256, 32  # Example dimensions for 3D MRI scans
     num_classes = 2  # Number of output classes (e.g., tumor vs. non-tumor)
-    stem_channels = 32
+    stem_channels = 16
 
     # Create sample inputs for T1, T2, and T1C (simulating 3D MRI sequences)
     # Each tensor represents a batch of images with shape [batch_size, channels, depth, height, width]
@@ -519,20 +592,10 @@ if __name__ == "__main__":
     feature_extractor = FeatureExtractor(in_channels=stem_channels).to(device)
     feature_extractor_output = feature_extractor(conv_stem_output)
 
-    pooling = nn.AdaptiveAvgPool3d((1, 1, 1))
-    pooling_output = pooling(feature_extractor_output)
-    h_feature = torch.cat(
-        (
-            pooling_output.reshape(pooling_output.shape[0], pooling_output.shape[1], 1),
-            pooling_output.reshape(pooling_output.shape[0], pooling_output.shape[1], 1),
-        ),
-        dim=2,
-    )
-
     cross_modal_attn_block = CrossModalAttention(
         hidden_size=stem_channels * 2**4,
-        num_heads=8,
-        dropout_rate=0.5,
+        num_heads=16,
+        dropout_rate=0.1,
     ).to(device)
     # Reshape tensors to (B, N, C) format for cross-attention
     tensor1_flat = feature_extractor_output.reshape(
@@ -561,11 +624,21 @@ if __name__ == "__main__":
         num_classes=2,
     ).to(device)
     cls_head_output = cls_head(mamba_fusion_block_output)
-    cls_head = ClsHead(
-        input_dim=h_feature.shape[-1],
-        num_classes=2,
-    ).to(device)
-    cls_head_output = cls_head(h_feature)
+
+    # pooling = nn.AdaptiveAvgPool3d((1, 1, 1))
+    # pooling_output = pooling(feature_extractor_output)
+    # h_feature = torch.cat(
+    #     (
+    #         pooling_output.reshape(pooling_output.shape[0], pooling_output.shape[1], 1),
+    #         pooling_output.reshape(pooling_output.shape[0], pooling_output.shape[1], 1),
+    #     ),
+    #     dim=2,
+    # )
+    # cls_head = ClsHead(
+    #     input_dim=h_feature.shape[-1],
+    #     num_classes=2,
+    # ).to(device)
+    # cls_head_output = cls_head(h_feature)
 
     # msf_encoder1 = MSFEncoder(in_channels=16, out_channels=32, scales=[3, 5, 7]).to(
     #     device
