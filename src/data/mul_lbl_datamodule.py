@@ -286,6 +286,7 @@ class LBLDataModule(LightningDataModule):
         input_size: list = [128, 128, 32],
         seed: int = 42,
         task_name: str = "",
+        dataset_name: str = "",
     ) -> None:
         """Initialize a `LBLDataModule`.
 
@@ -318,19 +319,21 @@ class LBLDataModule(LightningDataModule):
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
-        dataset_name = "LBL_raw_BJTR"
-        dataset_name = "LBL_all_tumor"
-        dataset_name = "LBL_all"
-        dataset_name = "LBL_all_reg"
-        # dataset_name = "LBL_all_reg_sample"
+        # dataset_name = "LBL_raw_BJTR"
+        # dataset_name = "LBL_all_tumor"
+        # dataset_name = "LBL_all"
+        # dataset_name = "LBL_all_reg"
+        # dataset_name = "LBL_all_reg_resample"
+        # dataset_name = "BraTS_TCGA"
         all_data_df = pd.read_excel(
             f"/data/zlt/projects/data/{dataset_name}/{dataset_name}.xlsx"
         )
-        all_data_df = all_data_df[
-            (all_data_df["来源医院"].isin(["北京同仁"]))
-            # & (all_data_df["flag"] == 1)
-            # & (all_data_df["MagneticFieldStrength"] != 1.5)
-        ]
+        if "LBL" in dataset_name:
+            all_data_df = all_data_df[
+                (all_data_df["来源医院"].isin(["北京同仁"]))
+                # & (all_data_df["flag"] == 1)
+                # & (all_data_df["MagneticFieldStrength"] != 1.5)
+            ]
 
         # 划分训练_验证224*0.8=179例、测试集224*0.2=45例
         split_ratio = 0.8
@@ -425,7 +428,7 @@ class LBLDataModule(LightningDataModule):
                     seq_name
                 ] = f"{data_root}/{patient_dir}/{seq_name}/{seg_prefix}/{seq_name}_Label.nii.gz"
                 self.test_rawlist[patient_dir][self.label_prefix] = data["病理级别"]
-        if fold in ["extest", "train_val"]:
+        if fold in ["extest", "train_val"] and dataset_name != "BraTs_TCGA":
             # 外部验证集
             self.extest_rawlist = {}
             # dataset_name = "LBL_raw_extest"
@@ -784,6 +787,7 @@ if __name__ == "__main__":
     data_dir = data_config["data_dir"]
     dataset_json = data_config["dataset_json"]
     splits_final_json = data_config["splits_final_json"]
+    dataset_name = data_config["dataset_name"]
     fold = 0
     fold = "extest"
     fold = "train_val"
@@ -794,6 +798,7 @@ if __name__ == "__main__":
         sequence_idx="0001",
         dataset_json=dataset_json,
         splits_final_json=splits_final_json,
+        dataset_name=dataset_name,
     )
     lbl_dataset.setup()
 
