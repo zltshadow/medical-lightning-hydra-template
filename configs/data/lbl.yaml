@@ -16,4 +16,4 @@ pin_memory: False # 数据集小的时候设置为False，数据集大的时候�
 input_size: [256, 256, 96]
 seed: 42
 task_name: ${task_name}
-dataset_name: "BraTs_TCGA"
+dataset_name: "LBL_all_reg"

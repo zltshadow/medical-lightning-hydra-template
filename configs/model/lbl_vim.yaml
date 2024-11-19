@@ -1,0 +1,31 @@
+defaults:
+  - _self_
+  - optimizer
+
+model_name: Vim
+
+_target_: src.models.lbl_module.LBLLitModule
+
+net:
+  _target_: src.models.components.vim.VisionMamba
+  patch_size: 16
+  embed_dim: 384
+  depth: 24
+  rms_norm: True
+  residual_in_fp32: True
+  fused_add_norm: True
+  final_pool_type: mean
+  if_abs_pos_embed: True
+  if_rope: False
+  if_rope_residual: False
+  bimamba_type: v2
+  if_cls_token: True
+  if_divide_out: True
+  use_middle_cls_token: True
+  pretrained: False
+  num_classes: 2
+  drop_rat: 0
+  drop_path_rate: 0
+  drop_block_rate: None
+  img_size: [256, 256, 96]
+  channels: 1

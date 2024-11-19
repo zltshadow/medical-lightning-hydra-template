@@ -78,8 +78,7 @@ class LBLLitModule(LightningModule):
         if loss_name == "ce":
             self.criterion = torch.nn.CrossEntropyLoss()
         elif loss_name == "bce":
-            weight_tensor = torch.tensor([0.68965517, 1.81818182], dtype=torch.float)
-            self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=weight_tensor)
+            self.criterion = torch.nn.BCEWithLogitsLoss()
 
         # metric objects for calculating and averaging accuracy across batches
         self.train_acc = BinaryAccuracy()

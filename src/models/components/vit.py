@@ -1,5 +1,6 @@
 import torch
 from monai.networks import nets
+from torchinfo import summary
 
 
 class ViT(nets.ViT):
@@ -22,7 +23,7 @@ class ViT(nets.ViT):
 
 if __name__ == "__main__":
     model = ViT(
-        img_size=[128, 128, 32],
+        img_size=[256, 256, 96],
         patch_size=[16, 16, 16],
         spatial_dims=3,
         in_channels=1,
@@ -30,7 +31,8 @@ if __name__ == "__main__":
         classification=True,
         dropout_rate=0,
         post_activation=None,
-    )
-    img = torch.randn(2, 1, 128, 128, 32)
+    ).to("cuda")
+    summary(model=model, input_size=(2, 1, 256, 256, 96))
+    img = torch.randn(2, 1, 256, 256, 96).to("cuda")
     preds = model(img)
     print(preds, preds[0].shape)

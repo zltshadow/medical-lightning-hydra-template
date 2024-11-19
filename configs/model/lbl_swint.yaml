@@ -1,0 +1,19 @@
+defaults:
+  - _self_
+  - optimizer
+
+model_name: SwinT
+
+_target_: src.models.lbl_module.LBLLitModule
+
+net:
+  _target_: src.models.components.swint.SwinTransformer
+  embed_dim: 384
+  window_size: 7
+  patch_size: 16
+  depths: [2, 2, 2, 2]
+  num_heads: [3, 6, 12, 24]
+  spatial_dims: 3
+  in_chans: 1
+  num_classes: 2
+  classification: True
