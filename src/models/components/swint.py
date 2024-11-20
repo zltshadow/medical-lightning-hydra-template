@@ -897,10 +897,10 @@ class SwinTransformer(nn.Module):
 
 if __name__ == "__main__":
     model = SwinTransformer(
-        embed_dim=768,
-        window_size=7,
+        embed_dim=96,
+        window_size=16,
         patch_size=16,
-        depths=(2, 2, 2, 2),
+        depths=(2, 2, 6, 2),
         num_heads=(3, 6, 12, 24),
         spatial_dims=3,
         in_chans=1,

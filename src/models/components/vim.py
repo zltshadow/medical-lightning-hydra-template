@@ -2726,13 +2726,13 @@ def vim_base_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_middle_cls
 
 if __name__ == "__main__":
     model = create_model(
-        model_name="vim_tiny_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_midclstok_div2",
+        model_name="vim_base_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_middle_cls_token_div2",
         pretrained=False,
         num_classes=2,
-        drop_rate=0,
-        drop_path_rate=0,
-        drop_block_rate=None,
-        img_size=(256, 256, 96),
         channels=1,
+        img_size=(256, 256, 96),
     ).to("cuda")
     summary(model, input_size=(2, 1, 256, 256, 96))
+    img = torch.randn(2, 1, 256, 256, 96).to("cuda")
+    preds = model(img)
+    print(preds, preds[0].shape)

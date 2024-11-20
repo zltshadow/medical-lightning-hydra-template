@@ -7,11 +7,11 @@ scheduler:
   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
   _partial_: true
   mode: min
-  factor: 0.5
-  patience: 10
+  factor: 0.1
+  patience: 20
   # _target_: monai.optimizers.WarmupCosineSchedule
   # _partial_: true
-  # warmup_steps: ${trainer.check_val_every_n_epoch}
+  # warmup_steps: 5
   # t_total: ${trainer.max_epochs}
 
 loss_name: bce

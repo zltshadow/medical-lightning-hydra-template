@@ -1,0 +1,16 @@
+defaults:
+  - _self_
+  - optimizer
+
+model_name: ConvNeXt
+
+_target_: src.models.lbl_module.LBLLitModule
+
+net:
+  _target_: src.models.components.convnext.ConvNeXt
+  in_chans: 1
+  num_classes: 2
+  depths: [3, 3, 27, 3]
+  dims: [128, 256, 512, 1024]
+  use_grn: True
+  conv_mlp: False

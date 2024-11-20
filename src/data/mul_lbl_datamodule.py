@@ -12,6 +12,7 @@ from monai.transforms import (
     EnsureChannelFirstd,
     Orientationd,
     NormalizeIntensityd,
+    CropForeground,
     CropForegroundd,
     Resized,
     Resize,
@@ -103,6 +104,7 @@ class LoadMulImaged(MapTransform):
         prune_meta_sep: str = ".",
         allow_missing_keys: bool = False,
         expanduser: bool = True,
+        image_size: Tuple = (256, 256, 32),
         *args,
         **kwargs,
     ) -> None:
@@ -170,6 +172,7 @@ class LoadMulImaged(MapTransform):
             )
         self.meta_key_postfix = ensure_tuple_rep(meta_key_postfix, len(self.keys))
         self.overwriting = overwriting
+        self.image_size = image_size
 
     def register(self, reader: ImageReader):
         self._loader.register(reader)
@@ -190,9 +193,19 @@ class LoadMulImaged(MapTransform):
                 t1c_data = self._loader(d[key][2], reader)
                 if key == "seg_path":
                     mode = "nearest"
+                    preprocessor = Compose(
+                        [
+                            Resize(spatial_size=self.image_size, mode=mode),
+                        ]
+                    )
                 else:
                     mode = "bilinear"
-                preprocessor = Compose([Resize(spatial_size=(256, 256, 32), mode=mode)])
+                    preprocessor = Compose(
+                        [
+                            # CropForeground(allow_smaller=False),
+                            Resize(spatial_size=self.image_size, mode=mode),
+                        ]
+                    )
                 preprocess_t1_data = preprocessor(t1_data)
                 preprocess_t2_data = preprocessor(t2_data)
                 preprocess_t1c_data = preprocessor(t1c_data)
@@ -283,7 +296,7 @@ class LBLDataModule(LightningDataModule):
         batch_size: int = 4,
         num_workers: int = 0,
         pin_memory: bool = False,
-        input_size: list = [128, 128, 32],
+        input_size: list = [256, 256, 96],
         seed: int = 42,
         task_name: str = "",
         dataset_name: str = "",
@@ -504,7 +517,7 @@ class LBLDataModule(LightningDataModule):
         #         for i in test_df["输出文件夹"]
         #     ]
         #     self.test_rawlist[seq_name][self.label_prefix] = test_df["病理级别"].values
-
+        image_size = (input_size[0], input_size[1], input_size[2] // 3)
         # 定义变换
         self.train_transforms = Compose(
             [
@@ -512,6 +525,7 @@ class LBLDataModule(LightningDataModule):
                     keys=["image_path", "seg_path"],
                     reader=ITKReader,
                     ensure_channel_first=True,
+                    image_size=image_size,
                 ),
                 NormalizeIntensityd(
                     keys=["image"],
@@ -561,6 +575,7 @@ class LBLDataModule(LightningDataModule):
                     keys=["image_path", "seg_path"],
                     reader=ITKReader,
                     ensure_channel_first=True,
+                    image_size=image_size,
                 ),
                 NormalizeIntensityd(
                     keys=["image"],
@@ -578,6 +593,7 @@ class LBLDataModule(LightningDataModule):
                     keys=["image_path", "seg_path"],
                     reader=ITKReader,
                     ensure_channel_first=True,
+                    image_size=image_size,
                 ),
                 NormalizeIntensityd(
                     keys=["image"],
@@ -788,6 +804,8 @@ if __name__ == "__main__":
     dataset_json = data_config["dataset_json"]
     splits_final_json = data_config["splits_final_json"]
     dataset_name = data_config["dataset_name"]
+    dataset_name = "BraTs_TCGA"
+    dataset_name = "LBL_all_reg"
     fold = 0
     fold = "extest"
     fold = "train_val"
@@ -799,6 +817,7 @@ if __name__ == "__main__":
         dataset_json=dataset_json,
         splits_final_json=splits_final_json,
         dataset_name=dataset_name,
+        input_size=(256, 256, 96),
     )
     lbl_dataset.setup()
 
