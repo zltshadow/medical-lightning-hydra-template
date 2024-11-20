@@ -56,7 +56,7 @@ class LBLLitModule(LightningModule):
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
         model_name: str = "",
-        loss_name: str = "ce",
+        loss_name: str = "bce",
     ) -> None:
         """Initialize a `LBLLitModule`.
 
@@ -87,6 +87,10 @@ class LBLLitModule(LightningModule):
 
         self.train_auc = BinaryAUROC()
         self.val_auc = BinaryAUROC()
+        self.val_precision = BinaryPrecision()
+        self.val_recall = BinaryRecall()
+        self.val_f1 = BinaryF1Score()
+
         self.test_auc = BinaryAUROC()
         self.test_precision = BinaryPrecision()
         self.test_recall = BinaryRecall()
@@ -102,7 +106,7 @@ class LBLLitModule(LightningModule):
         self.test_loss = MeanMetric()
 
         # for tracking best so far validation accuracy
-        self.val_acc_best = MaxMetric()
+        # self.val_acc_best = MaxMetric()
         self.val_auc_best = MaxMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -130,7 +134,7 @@ class LBLLitModule(LightningModule):
         # so it's worth to make sure validation metrics don't store results from these checks
         self.val_loss.reset()
         self.val_acc.reset()
-        self.val_acc_best.reset()
+        # self.val_acc_best.reset()
         self.val_auc.reset()
         self.val_auc_best.reset()
 
@@ -214,21 +218,35 @@ class LBLLitModule(LightningModule):
         self.val_loss(loss)
         self.val_acc(preds, targets)
         self.val_auc(probs, targets)
+        self.val_precision(preds, targets)
+        self.val_recall(preds, targets)
+        self.val_f1(preds, targets)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "val/precision",
+            self.val_precision,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "val/recall", self.val_recall, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.log("val/f1", self.val_f1, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
         acc = self.val_acc.compute()  # get current val acc
-        self.val_acc_best(acc)  # update best so far val acc
+        # self.val_acc_best(acc)  # update best so far val acc
         auc = self.val_auc.compute()  # get current val acc
         self.val_auc_best(auc)  # update best so far val acc
         # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
-        self.log(
-            "val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True
-        )
+        # self.log(
+        #     "val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True
+        # )
         self.log(
             "val/auc_best", self.val_auc_best.compute(), sync_dist=True, prog_bar=True
         )

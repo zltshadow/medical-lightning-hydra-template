@@ -12,6 +12,7 @@ from monai.transforms import (
     EnsureChannelFirstd,
     Orientationd,
     NormalizeIntensityd,
+    ScaleIntensityd,
     CropForeground,
     CropForegroundd,
     Resized,
@@ -527,7 +528,10 @@ class LBLDataModule(LightningDataModule):
                     ensure_channel_first=True,
                     image_size=image_size,
                 ),
-                NormalizeIntensityd(
+                # NormalizeIntensityd(
+                #     keys=["image"],
+                # ),
+                ScaleIntensityd(
                     keys=["image"],
                 ),
                 # range_z 围绕Z轴旋转，0.3弧度大约是17度， 度= 弧度 × π / 180
@@ -577,7 +581,10 @@ class LBLDataModule(LightningDataModule):
                     ensure_channel_first=True,
                     image_size=image_size,
                 ),
-                NormalizeIntensityd(
+                # NormalizeIntensityd(
+                #     keys=["image"],
+                # ),
+                ScaleIntensityd(
                     keys=["image"],
                 ),
                 ToTensord(
@@ -595,7 +602,10 @@ class LBLDataModule(LightningDataModule):
                     ensure_channel_first=True,
                     image_size=image_size,
                 ),
-                NormalizeIntensityd(
+                # NormalizeIntensityd(
+                #     keys=["image"],
+                # ),
+                ScaleIntensityd(
                     keys=["image"],
                 ),
                 ToTensord(
