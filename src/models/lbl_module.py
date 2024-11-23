@@ -115,17 +115,17 @@ class LBLLitModule(LightningModule):
         :param x: A tensor of images.
         :return: A tensor of logits.
         """
-        if self.model_name == "SFMamba":
-            # 计算最后一个维度的大小
-            last_dim_size = x.shape[-1]
-            # 计算每份的大小
-            chunk_size = last_dim_size // 3
-            # 分割最后一个维度
-            t1_sample = x[:, :, :, :, :chunk_size]
-            t2_sample = x[:, :, :, :, chunk_size : 2 * chunk_size]
-            t1c_sample = x[:, :, :, :, 2 * chunk_size :]
-            # print(t1_sample.shape, t2_sample.shape, t1c_sample.shape)
-            return self.net(t1_sample, t2_sample, t1c_sample)
+        # if self.model_name == "SFMamba":
+        #     # 计算最后一个维度的大小
+        #     last_dim_size = x.shape[-1]
+        #     # 计算每份的大小
+        #     chunk_size = last_dim_size // 3
+        #     # 分割最后一个维度
+        #     t1_sample = x[:, :, :, :, :chunk_size]
+        #     t2_sample = x[:, :, :, :, chunk_size : 2 * chunk_size]
+        #     t1c_sample = x[:, :, :, :, 2 * chunk_size :]
+        #     # print(t1_sample.shape, t2_sample.shape, t1c_sample.shape)
+        #     return self.net(t1_sample, t2_sample, t1c_sample)
         return self.net(x)
 
     def on_train_start(self) -> None:
@@ -137,6 +137,9 @@ class LBLLitModule(LightningModule):
         # self.val_acc_best.reset()
         self.val_auc.reset()
         self.val_auc_best.reset()
+        self.val_precision.reset()
+        self.val_recall.reset()
+        self.val_f1.reset()
 
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
@@ -150,9 +153,12 @@ class LBLLitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        image = batch["image"]
-        seg = batch["seg"]
-        label = batch["label"]
+        # 3d
+        # image = batch["image"]
+        # seg = batch["seg"]
+        # label = batch["label"]
+        image = batch[0]
+        label = batch[1]
         # image, seg, label = batch
         x = image
         y = label
@@ -238,7 +244,7 @@ class LBLLitModule(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
-        acc = self.val_acc.compute()  # get current val acc
+        # acc = self.val_acc.compute()  # get current val acc
         # self.val_acc_best(acc)  # update best so far val acc
         auc = self.val_auc.compute()  # get current val acc
         self.val_auc_best(auc)  # update best so far val acc

@@ -1,57 +1,54 @@
+import timm
 import torch
-from monai.networks import nets
 from torchinfo import summary
+import yaml
+from src.utils.utils import add_torch_shape_forvs
+import torch
+from torch import nn
 
 
-class ResNet(nets.ResNet):
-    """A simple fully-connected neural net for computing predictions."""
+class ResNet(nn.Module):
+    def __init__(
+        self,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+
+        self.model = timm.create_model("resnet50", **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.act(x)
-        if not self.no_max_pool:
-            x = self.maxpool(x)
+        """Perform a single forward pass through the network.
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-
-        x = self.avgpool(x)
-
-        x = x.view(x.size(0), -1)
-        if self.fc is not None:
-            x = self.fc(x)
-
-        return x
+        :param x: The input tensor.
+        :return: A tensor of predictions.
+        """
+        return self.model(x)
 
 
 if __name__ == "__main__":
+    add_torch_shape_forvs()
+    with open("configs/data/lbl.yaml", "r", encoding="utf-8") as f:
+        data_config = yaml.load(f.read(), Loader=yaml.FullLoader)
+    input_size = data_config["input_size"]
+    batch_size = data_config["batch_size"]
+    in_channels = data_config["in_channels"]
+    num_classes = data_config["num_classes"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # # resnet34
-    # model = ResNet(
-    #     block="basic",
-    #     layers=[3, 4, 6, 3],
-    #     block_inplanes=[64, 128, 256, 512],
-    #     shortcut_type="A",
-    #     bias_downsample=True,
-    #     spatial_dims=3,
-    #     n_input_channels=1,
-    #     num_classes=2,
-    # )
-    # resnet50
     model = ResNet(
-        block="bottleneck",
-        layers=[3, 4, 6, 3],
-        block_inplanes=[64, 128, 256, 512],
-        shortcut_type="B",
-        bias_downsample=False,
-        spatial_dims=3,
-        n_input_channels=1,
-        num_classes=2,
+        in_chans=in_channels,
+        num_classes=num_classes,
     ).to(device)
-    img = torch.randn(2, 1, 256, 256, 32).to(device)
-    summary(model=model, input_size=img.shape)
+    summary(
+        model,
+        input_size=(
+            batch_size,
+            in_channels,
+            input_size[0],
+            input_size[1],
+        ),
+    )
+    img = torch.randn((batch_size, in_channels, input_size[0], input_size[1])).to(
+        device
+    )
     preds = model(img)
     print(preds, preds[0].shape)

@@ -8,5 +8,6 @@ _target_: src.models.lbl_module.LBLLitModule
 
 net:
   _target_: src.models.components.nnmamba.nnMambaEncoder
+  in_ch: 3
   num_classes: 2
   

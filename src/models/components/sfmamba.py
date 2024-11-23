@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from monai.networks.layers.utils import get_rel_pos_embedding_layer
 from monai.utils import pytorch_after
+import yaml
 from src.utils.utils import add_torch_shape_forvs
 from mamba_ssm import Mamba2
 from torchinfo import summary
@@ -196,11 +197,12 @@ class MambaLayer(nn.Module):
 
 
 class MSFEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels, scales=[3, 5, 7]):
+    def __init__(self, in_channels, out_channels, scales=[3, 5, 7], conv=True):
         super(MSFEncoder, self).__init__()
         self.out_channels = out_channels
-        # 有128通道后再进行mamba提取，即最后两层encoder,最后两层不用卷积
-        if self.out_channels >= 128:
+        self.conv = conv
+        # 前两层多尺度卷积，最后两层Mamba
+        if conv:
             self.mamba = MambaLayer(dim=in_channels)
         else:
             # Multi-scale convolutions
@@ -242,7 +244,7 @@ class MSFEncoder(nn.Module):
         )
 
     def forward(self, x):
-        if self.out_channels >= 128:
+        if self.conv:
             fused = x
             mamba_res = self.mamba(fused)
             downscaled = self.downsample(mamba_res)  # Downsample spatially
@@ -266,7 +268,7 @@ class FeatureExtractor(nn.Module):
         out_channels_4 = in_channels * 2**4
 
         self.msf_encoder1 = MSFEncoder(
-            in_channels=in_channels, out_channels=out_channels_1
+            in_channels=in_channels, out_channels=out_channels_1, conv=False
         )
         self.se_layer_1 = ChannelSELayer(
             spatial_dims=3,
@@ -277,7 +279,7 @@ class FeatureExtractor(nn.Module):
             add_residual=True,
         )
         self.msf_encoder2 = MSFEncoder(
-            in_channels=out_channels_1, out_channels=out_channels_2
+            in_channels=out_channels_1, out_channels=out_channels_2, conv=False
         )
         self.se_layer_2 = ChannelSELayer(
             spatial_dims=3,
@@ -288,7 +290,7 @@ class FeatureExtractor(nn.Module):
             add_residual=True,
         )
         self.msf_encoder3 = MSFEncoder(
-            in_channels=out_channels_2, out_channels=out_channels_3
+            in_channels=out_channels_2, out_channels=out_channels_3, conv=True
         )
         self.se_layer_3 = ChannelSELayer(
             spatial_dims=3,
@@ -299,7 +301,7 @@ class FeatureExtractor(nn.Module):
             add_residual=True,
         )
         self.msf_encoder4 = MSFEncoder(
-            in_channels=out_channels_3, out_channels=out_channels_4
+            in_channels=out_channels_3, out_channels=out_channels_4, conv=True
         )
         self.se_layer_4 = ChannelSELayer(
             spatial_dims=3,
@@ -313,16 +315,36 @@ class FeatureExtractor(nn.Module):
         self.shortcut_convs = nn.ModuleList(
             [
                 nn.Conv3d(
-                    in_channels, out_channels_1, kernel_size=1, stride=2, padding=0
+                    in_channels,
+                    out_channels_1,
+                    kernel_size=1,
+                    stride=2,
+                    padding=0,
+                    bias=False,
                 ),
                 nn.Conv3d(
-                    out_channels_1, out_channels_2, kernel_size=1, stride=2, padding=0
+                    out_channels_1,
+                    out_channels_2,
+                    kernel_size=1,
+                    stride=2,
+                    padding=0,
+                    bias=False,
                 ),
                 nn.Conv3d(
-                    out_channels_2, out_channels_3, kernel_size=1, stride=2, padding=0
+                    out_channels_2,
+                    out_channels_3,
+                    kernel_size=1,
+                    stride=2,
+                    padding=0,
+                    bias=False,
                 ),
                 nn.Conv3d(
-                    out_channels_3, out_channels_4, kernel_size=1, stride=2, padding=0
+                    out_channels_3,
+                    out_channels_4,
+                    kernel_size=1,
+                    stride=2,
+                    padding=0,
+                    bias=False,
                 ),
             ]
         )
@@ -658,7 +680,7 @@ class MultiSeqMambaModel(nn.Module):
         super(MultiSeqMambaModel, self).__init__()
         embed_dim = stem_channels * 2**4
         # Define ConvStem for initial feature extraction
-        self.conv_stem = ConvStem(in_channels=in_channels, out_channels=stem_channels)
+        self.conv_stem = ConvStem(in_channels=1, out_channels=stem_channels)
 
         # Define feature extractor
         self.feature_extractor = FeatureExtractor(in_channels=stem_channels)
@@ -666,7 +688,7 @@ class MultiSeqMambaModel(nn.Module):
         # Cross-modal attention block (hidden size is adjustable based on encoder channels and model design)
         self.cross_modal_attn_block = CrossModalAttention(
             hidden_size=embed_dim,
-            num_heads=64,
+            num_heads=8,
             dropout_rate=0.2,
             qkv_bias=True,
             use_flash_attention=True,
@@ -686,11 +708,14 @@ class MultiSeqMambaModel(nn.Module):
         #     elif isinstance(m, nn.Linear) and m.bias is not None:
         #         nn.init.constant_(torch.as_tensor(m.bias), 0)
 
-    def forward(self, t1, t2, t1c):
+    def forward(self, x):
+        t1_sample = x[:, 0:1, :, :, :]
+        t2_sample = x[:, 1:2, :, :, :]
+        t1c_sample = x[:, 2:3, :, :, :]
         # Move tensors through ConvStem
-        t1_features = self.conv_stem(t1)
-        t2_features = self.conv_stem(t2)
-        t1c_features = self.conv_stem(t1c)
+        t1_features = self.conv_stem(t1_sample)
+        t2_features = self.conv_stem(t2_sample)
+        t1c_features = self.conv_stem(t1c_sample)
 
         # Feature extraction
         t1_features = self.feature_extractor(t1_features)
@@ -725,21 +750,31 @@ class MultiSeqMambaModel(nn.Module):
 
 if __name__ == "__main__":
     add_torch_shape_forvs()
+    with open("configs/data/lbl.yaml", "r", encoding="utf-8") as f:
+        data_config = yaml.load(f.read(), Loader=yaml.FullLoader)
+    input_size = data_config["input_size"]
+    batch_size = data_config["batch_size"]
+    in_channels = data_config["in_channels"]
+    num_classes = data_config["num_classes"]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Set parameters for the test
-    batch_size = 2  # Number of samples in a batch
-    in_channels = 1  # Single channel for MRI inputs (grayscale)
-    depth, height, width = 256, 256, 32  # Example dimensions for 3D MRI scans
-    num_classes = 2  # Number of output classes (e.g., tumor vs. non-tumor)
-    stem_channels = 16
+    # batch_size = 2  # Number of samples in a batch
+    depth, height, width = (
+        input_size[0],
+        input_size[1],
+        input_size[2],
+    )  # Example dimensions for 3D MRI scans
+    # num_classes = 2  # Number of output classes (e.g., tumor vs. non-tumor)
 
+    stem_channels = 64
+    x = torch.randn(batch_size, in_channels, depth, height, width).to(device)
     # Create sample inputs for T1, T2, and T1C (simulating 3D MRI sequences)
     # Each tensor represents a batch of images with shape [batch_size, channels, depth, height, width]
-    t1_sample = torch.randn(batch_size, in_channels, depth, height, width)
-    t2_sample = torch.randn(batch_size, in_channels, depth, height, width)
-    t1c_sample = torch.randn(batch_size, in_channels, depth, height, width)
+    t1_sample = x[:, 0:1, :, :, :]
+    t2_sample = x[:, 1:2, :, :, :]
+    t1c_sample = x[:, 2:3, :, :, :]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     t1_sample = t1_sample.to(device)
     t2_sample = t2_sample.to(device)
     t1c_sample = t1c_sample.to(device)
@@ -752,7 +787,7 @@ if __name__ == "__main__":
 
     cross_modal_attn_block = CrossModalAttention(
         hidden_size=stem_channels * 2**4,
-        num_heads=64,
+        num_heads=8,
         dropout_rate=0.2,
         qkv_bias=True,
         use_flash_attention=True,
@@ -824,16 +859,9 @@ if __name__ == "__main__":
     model = MultiSeqMambaModel(
         in_channels=in_channels, num_classes=num_classes, stem_channels=stem_channels
     ).to(device)
-    # Set model to evaluation mode (important for inference)
-    model.eval()
-    summary(
-        model,
-        input_size=[(2, 1, 256, 256, 32), (2, 1, 256, 256, 32), (2, 1, 256, 256, 32)],
-    )
-    # Forward pass through the model
-    with torch.no_grad():  # Disable gradient computation for testing
-        output = model(t1_sample, t2_sample, t1c_sample)
-
-    # Display the output predictions
-    print("Output predictions:", output)
-    print("Predicted class labels:", torch.argmax(output, dim=1))
+    img = torch.randn(
+        batch_size, in_channels, input_size[0], input_size[1], input_size[2]
+    ).to(device)
+    summary(model=model, input_size=img.shape)
+    preds = model(img)
+    print(preds, preds[0].shape)

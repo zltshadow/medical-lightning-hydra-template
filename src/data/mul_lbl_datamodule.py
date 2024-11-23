@@ -216,7 +216,7 @@ class LoadMulImaged(MapTransform):
                         preprocess_t2_data,
                         preprocess_t1c_data,
                     ),
-                    dim=-1,
+                    dim=0,
                 )
                 if key == "image_path":
                     d["image"] = data
@@ -301,6 +301,8 @@ class LBLDataModule(LightningDataModule):
         seed: int = 42,
         task_name: str = "",
         dataset_name: str = "",
+        in_channels: int = 3,
+        num_classes: int = 2,
     ) -> None:
         """Initialize a `LBLDataModule`.
 
@@ -518,7 +520,8 @@ class LBLDataModule(LightningDataModule):
         #         for i in test_df["输出文件夹"]
         #     ]
         #     self.test_rawlist[seq_name][self.label_prefix] = test_df["病理级别"].values
-        image_size = (input_size[0], input_size[1], input_size[2] // 3)
+        # image_size = (input_size[0], input_size[1], input_size[2] // 3)
+        image_size = tuple(input_size)
         # 定义变换
         self.train_transforms = Compose(
             [
@@ -814,6 +817,7 @@ if __name__ == "__main__":
     dataset_json = data_config["dataset_json"]
     splits_final_json = data_config["splits_final_json"]
     dataset_name = data_config["dataset_name"]
+    input_size = data_config["input_size"]
     dataset_name = "BraTs_TCGA"
     dataset_name = "LBL_all_reg"
     fold = 0
@@ -827,7 +831,7 @@ if __name__ == "__main__":
         dataset_json=dataset_json,
         splits_final_json=splits_final_json,
         dataset_name=dataset_name,
-        input_size=(256, 256, 96),
+        input_size=input_size,
     )
     lbl_dataset.setup()
 
@@ -907,26 +911,26 @@ if __name__ == "__main__":
 
     print(f"save lbldata_test_fold_{fold}.jpg")
 
-    # BCEWithLogitsLoss损失函数权重获取
-    train_class_weights = compute_class_weight(
-        "balanced",
-        classes=np.unique([0, 1]),
-        y=[int(i["label"]) for i in lbl_dataset.data_train],
-    )
-    val_class_weights = compute_class_weight(
-        "balanced",
-        classes=np.unique([0, 1]),
-        y=[int(i["label"]) for i in lbl_dataset.data_val],
-    )
-    test_class_weights = compute_class_weight(
-        "balanced",
-        classes=np.unique([0, 1]),
-        y=[int(i["label"]) for i in lbl_dataset.data_test],
-    )
-    print(train_class_weights)
-    # 将权重转换为 PyTorch 张量
-    weight_tensor = torch.tensor(train_class_weights, dtype=torch.float)
-    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=weight_tensor[1])
+    # # BCEWithLogitsLoss损失函数权重获取
+    # train_class_weights = compute_class_weight(
+    #     "balanced",
+    #     classes=np.unique([0, 1]),
+    #     y=[int(i["label"]) for i in lbl_dataset.data_train],
+    # )
+    # val_class_weights = compute_class_weight(
+    #     "balanced",
+    #     classes=np.unique([0, 1]),
+    #     y=[int(i["label"]) for i in lbl_dataset.data_val],
+    # )
+    # test_class_weights = compute_class_weight(
+    #     "balanced",
+    #     classes=np.unique([0, 1]),
+    #     y=[int(i["label"]) for i in lbl_dataset.data_test],
+    # )
+    # print(train_class_weights)
+    # # 将权重转换为 PyTorch 张量
+    # weight_tensor = torch.tensor(train_class_weights, dtype=torch.float)
+    # criterion = torch.nn.BCEWithLogitsLoss(pos_weight=weight_tensor[1])
 
     first_data = next(iter(lbl_dataset.train_dataloader()))
     # # 输出训练集数据第一个图像跟标签是否都存在
@@ -936,3 +940,5 @@ if __name__ == "__main__":
     #     os.path.isfile(lbl_dataset.train_images[0])
     #     and os.path.isfile(lbl_dataset.train_segs[0])
     # )
+    print(first_data["image"].shape)
+    print(first_data["label"].shape)

@@ -4,6 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mamba_ssm import Mamba, Mamba2
 from torchinfo import summary
+import yaml
+
+from src.utils.utils import add_torch_shape_forvs
 
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
@@ -249,8 +252,28 @@ class nnMambaEncoder(nn.Module):
 
 
 if __name__ == "__main__":
-    model = nnMambaEncoder(num_classes=2).to("cuda")
-    img = torch.randn(2, 1, 256, 256, 96).to("cuda")
-    summary(model, input_size=(2, 1, 256, 256, 96))
+    add_torch_shape_forvs()
+    with open("configs/data/lbl.yaml", "r", encoding="utf-8") as f:
+        data_config = yaml.load(f.read(), Loader=yaml.FullLoader)
+    input_size = data_config["input_size"]
+    batch_size = data_config["batch_size"]
+    in_channels = data_config["in_channels"]
+    num_classes = data_config["num_classes"]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = nnMambaEncoder(in_ch=in_channels, num_classes=2).to(device)
+    img = torch.randn(
+        (batch_size, in_channels, input_size[0], input_size[1], input_size[2])
+    ).to(device)
+    summary(
+        model,
+        input_size=(
+            batch_size,
+            in_channels,
+            input_size[0],
+            input_size[1],
+            input_size[2],
+        ),
+    )
     preds = model(img)
     print(preds, preds[0].shape)
