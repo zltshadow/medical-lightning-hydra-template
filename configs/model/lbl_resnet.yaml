@@ -23,14 +23,16 @@ _target_: src.models.lbl_module.LBLLitModule
 # resnet50
 net:
   _target_: src.models.components.resnet.ResNet
-  block: "bottleneck"
-  layers: [3, 4, 6, 3]
-  block_inplanes: [64, 128, 256, 512]
-  shortcut_type: B
-  bias_downsample: False
-  spatial_dims: 2
-  n_input_channels: 3
+  in_chans: 3
   num_classes: 2
+  # block: "bottleneck"
+  # layers: [3, 4, 6, 3]
+  # block_inplanes: [64, 128, 256, 512]
+  # shortcut_type: B
+  # bias_downsample: False
+  # spatial_dims: 2
+  # n_input_channels: 3
+  # num_classes: 2
 # # resnet10
 # net:
 #   _target_: src.models.components.resnet.ResNet

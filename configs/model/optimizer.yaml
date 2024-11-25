@@ -14,6 +14,6 @@ scheduler:
   # warmup_steps: 5
   # t_total: ${trainer.max_epochs}
 
-loss_name: bce
+loss_name: ce
 # compile model for faster training with pytorch 2.0
 compile: false

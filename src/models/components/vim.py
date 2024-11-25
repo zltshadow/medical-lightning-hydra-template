@@ -1970,23 +1970,22 @@ class PatchEmbed(nn.Module):
     ):
         super().__init__()
         # img_size = to_3tuple(img_size)
-        patch_size = to_3tuple(patch_size)
+        patch_size = to_2tuple(patch_size)
         self.img_size = img_size
         self.patch_size = patch_size
         self.grid_size = (
             (img_size[0] - patch_size[0]) // stride + 1,
             (img_size[1] - patch_size[1]) // stride + 1,
-            (img_size[2] - patch_size[1]) // stride + 1,
         )
-        self.num_patches = self.grid_size[0] * self.grid_size[1] * self.grid_size[2]
+        self.num_patches = self.grid_size[0] * self.grid_size[1]
         self.flatten = flatten
-        self.proj = nn.Conv3d(
+        self.proj = nn.Conv2d(
             in_chans, embed_dim, kernel_size=patch_size, stride=stride
         )
         self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
 
     def forward(self, x):
-        B, C, H, W, D = x.shape
+        B, C, H, W = x.shape
         x = self.proj(x)
         if self.flatten:
             x = x.flatten(2).transpose(1, 2)  # BCHWD -> BNC
@@ -2737,14 +2736,14 @@ if __name__ == "__main__":
     num_classes = data_config["num_classes"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = create_model(
-        model_name="vim_base_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_middle_cls_token_div2",
+        model_name="vim_tiny_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_midclstok_div2",
         pretrained=False,
-        num_classes=2,
+        num_classes=num_classes,
         channels=in_channels,
-        img_size=(256, 256, 96),
+        img_size=input_size,
     ).to(device)
     img = torch.randn(
-        batch_size, in_channels, input_size[0], input_size[1], input_size[2]
+        batch_size, in_channels, input_size[0], input_size[1]
     ).to(device)
     summary(model=model, input_size=img.shape)
     preds = model(img)

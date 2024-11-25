@@ -9,5 +9,6 @@ _target_: src.models.lbl_module.LBLLitModule
 net:
   _target_: src.models.components.sfmamba.MultiSeqMambaModel
   in_channels: 3
-  stem_channels: 16
+  stem_channels: 32
   num_classes: 2
+  spatial_dims: 2

@@ -12,7 +12,7 @@ from mamba_ssm import Mamba2
 from torchinfo import summary
 import collections.abc
 from itertools import repeat
-from monai.networks.layers.factories import Act, Pool, split_args, Conv
+from monai.networks.layers.factories import Act, Pool, split_args
 
 
 class ChannelSELayer(nn.Module):
@@ -140,26 +140,22 @@ class Mlp(nn.Module):
 
 
 class ConvStem(nn.Module):
-    def __init__(self, in_channels, out_channels, spatial_dims):
+    def __init__(self, in_channels, out_channels):
         super(ConvStem, self).__init__()
-        conv_type: type[nn.Conv1d | nn.Conv2d | nn.Conv3d] = Conv[
-            Conv.CONV, spatial_dims
-        ]
-
         self.conv = nn.Sequential(
-            conv_type(
+            nn.Conv3d(
                 in_channels,
                 out_channels,
                 kernel_size=3,
                 stride=2,
                 padding=1,
             ),
-            # nn.BatchNorm2d(out_channels),
-            nn.GroupNorm(32, out_channels),
+            # nn.BatchNorm3d(out_channels),
+            nn.GroupNorm(16, out_channels),
             nn.GELU(),
-            conv_type(out_channels, out_channels, 3, padding=1),
-            # nn.BatchNorm2d(out_channels),
-            nn.GroupNorm(32, out_channels),
+            nn.Conv3d(out_channels, out_channels, 3, padding=1),
+            # nn.BatchNorm3d(out_channels),
+            nn.GroupNorm(16, out_channels),
             nn.GELU(),
         )
 
@@ -201,26 +197,23 @@ class MambaLayer(nn.Module):
 
 
 class MSFEncoder(nn.Module):
-    def __init__(
-        self, in_channels, out_channels, scales=[3, 5, 7], conv=True, spatial_dims=3
-    ):
+    def __init__(self, in_channels, out_channels, scales=[3, 5, 7], conv=True):
         super(MSFEncoder, self).__init__()
-        conv_type: type[nn.Conv1d | nn.Conv2d | nn.Conv3d] = Conv[
-            Conv.CONV, spatial_dims
-        ]
         self.out_channels = out_channels
         self.conv = conv
         # 前两层多尺度卷积，最后两层Mamba
         if conv:
+            self.mamba = MambaLayer(dim=in_channels)
+        else:
             # Multi-scale convolutions
             self.multi_scale_convs = nn.ModuleList(
                 [
                     nn.Sequential(
-                        conv_type(
+                        nn.Conv3d(
                             in_channels, in_channels, kernel_size=s, padding=s // 2
                         ),
-                        # nn.BatchNorm2d(in_channels),
-                        nn.GroupNorm(32, in_channels),
+                        # nn.BatchNorm3d(in_channels),
+                        nn.GroupNorm(16, in_channels),
                         nn.GELU(),
                     )
                     for s in scales
@@ -229,17 +222,15 @@ class MSFEncoder(nn.Module):
 
             # 1x1 convolution to fuse channels after concatenation of multi-scale features
             self.fusion_conv = nn.Sequential(
-                conv_type(in_channels * len(scales), in_channels, kernel_size=1),
-                # nn.BatchNorm2d(in_channels),
-                nn.GroupNorm(32, in_channels),
+                nn.Conv3d(in_channels * len(scales), in_channels, kernel_size=1),
+                # nn.BatchNorm3d(in_channels),
+                nn.GroupNorm(16, in_channels),
                 nn.GELU(),
             )
-        else:
-            self.mamba = MambaLayer(dim=in_channels)
 
         # Downsampling layer to reduce spatial dimensions
         self.downsample = nn.Sequential(
-            conv_type(
+            nn.Conv3d(
                 in_channels,
                 out_channels,
                 kernel_size=3,
@@ -247,13 +238,17 @@ class MSFEncoder(nn.Module):
                 padding=1,
                 bias=False,
             ),
-            # nn.BatchNorm2d(out_channels),
-            nn.GroupNorm(32, out_channels),
+            # nn.BatchNorm3d(out_channels),
+            nn.GroupNorm(16, out_channels),
             nn.GELU(),
         )
 
     def forward(self, x):
         if self.conv:
+            fused = x
+            mamba_res = self.mamba(fused)
+            downscaled = self.downsample(mamba_res)  # Downsample spatially
+        else:
             # Apply each scale and concatenate along the channel dimension
             residual = x
             features = [conv(x) for conv in self.multi_scale_convs]
@@ -261,15 +256,11 @@ class MSFEncoder(nn.Module):
             fused = self.fusion_conv(fused)  # Reduce channels back to `out_channels`
             fused = fused + residual
             downscaled = self.downsample(fused)  # Downsample spatially
-        else:
-            fused = x
-            mamba_res = self.mamba(fused)
-            downscaled = self.downsample(mamba_res)  # Downsample spatially
         return downscaled
 
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, in_channels, spatial_dims):
+    def __init__(self, in_channels):
         super(FeatureExtractor, self).__init__()
         out_channels_1 = in_channels * 2**1
         out_channels_2 = in_channels * 2**2
@@ -277,13 +268,10 @@ class FeatureExtractor(nn.Module):
         out_channels_4 = in_channels * 2**4
 
         self.msf_encoder1 = MSFEncoder(
-            in_channels=in_channels,
-            out_channels=out_channels_1,
-            conv=True,
-            spatial_dims=spatial_dims,
+            in_channels=in_channels, out_channels=out_channels_1, conv=False
         )
         self.se_layer_1 = ChannelSELayer(
-            spatial_dims=spatial_dims,
+            spatial_dims=3,
             in_channels=out_channels_1,
             r=2,
             acti_type_1="gelu",
@@ -291,13 +279,10 @@ class FeatureExtractor(nn.Module):
             add_residual=True,
         )
         self.msf_encoder2 = MSFEncoder(
-            in_channels=out_channels_1,
-            out_channels=out_channels_2,
-            conv=True,
-            spatial_dims=spatial_dims,
+            in_channels=out_channels_1, out_channels=out_channels_2, conv=False
         )
         self.se_layer_2 = ChannelSELayer(
-            spatial_dims=spatial_dims,
+            spatial_dims=3,
             in_channels=out_channels_2,
             r=2,
             acti_type_1="gelu",
@@ -305,13 +290,10 @@ class FeatureExtractor(nn.Module):
             add_residual=True,
         )
         self.msf_encoder3 = MSFEncoder(
-            in_channels=out_channels_2,
-            out_channels=out_channels_3,
-            conv=False,
-            spatial_dims=spatial_dims,
+            in_channels=out_channels_2, out_channels=out_channels_3, conv=True
         )
         self.se_layer_3 = ChannelSELayer(
-            spatial_dims=spatial_dims,
+            spatial_dims=3,
             in_channels=out_channels_3,
             r=2,
             acti_type_1="gelu",
@@ -319,30 +301,20 @@ class FeatureExtractor(nn.Module):
             add_residual=True,
         )
         self.msf_encoder4 = MSFEncoder(
-            in_channels=out_channels_3,
-            out_channels=out_channels_4,
-            conv=False,
-            spatial_dims=spatial_dims,
+            in_channels=out_channels_3, out_channels=out_channels_4, conv=True
         )
         self.se_layer_4 = ChannelSELayer(
-            spatial_dims=spatial_dims,
+            spatial_dims=3,
             in_channels=out_channels_4,
             r=2,
             acti_type_1="gelu",
             acti_type_2="gelu",
             add_residual=True,
         )
-        block_avgpool = [0, 1, (1, 1), (1, 1, 1)]
-        avgp_type: type[
-            nn.AdaptiveAvgPool1d | nn.AdaptiveAvgPool2d | nn.AdaptiveAvgPool3d
-        ] = Pool[Pool.ADAPTIVEAVG, spatial_dims]
-        self.pooling = avgp_type(block_avgpool[spatial_dims])
-        conv_type: type[nn.Conv1d | nn.Conv2d | nn.Conv3d] = Conv[
-            Conv.CONV, spatial_dims
-        ]
+        self.pooling = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.shortcut_convs = nn.ModuleList(
             [
-                conv_type(
+                nn.Conv3d(
                     in_channels,
                     out_channels_1,
                     kernel_size=1,
@@ -350,7 +322,7 @@ class FeatureExtractor(nn.Module):
                     padding=0,
                     bias=False,
                 ),
-                conv_type(
+                nn.Conv3d(
                     out_channels_1,
                     out_channels_2,
                     kernel_size=1,
@@ -358,7 +330,7 @@ class FeatureExtractor(nn.Module):
                     padding=0,
                     bias=False,
                 ),
-                conv_type(
+                nn.Conv3d(
                     out_channels_2,
                     out_channels_3,
                     kernel_size=1,
@@ -366,7 +338,7 @@ class FeatureExtractor(nn.Module):
                     padding=0,
                     bias=False,
                 ),
-                conv_type(
+                nn.Conv3d(
                     out_channels_3,
                     out_channels_4,
                     kernel_size=1,
@@ -381,9 +353,9 @@ class FeatureExtractor(nn.Module):
         # Layer 1
         residual = x
         x = self.msf_encoder1(x)
-        # residual = self.shortcut_convs[0](residual)  # Downsample residual
-        # x = x + residual
-        # x = self.se_layer_1(x)
+        residual = self.shortcut_convs[0](residual)  # Downsample residual
+        x = x + residual
+        x = self.se_layer_1(x)
         # pooled_c1_s = self.pooling(x)
 
         # Layer 2
@@ -392,7 +364,7 @@ class FeatureExtractor(nn.Module):
         residual = self.shortcut_convs[1](residual)  # Downsample residual
         x = x + residual
         x = self.se_layer_2(x)
-        pooled_c2_s = self.pooling(x)
+        # pooled_c2_s = self.pooling(x)
 
         # Layer 3
         residual = x
@@ -400,7 +372,7 @@ class FeatureExtractor(nn.Module):
         residual = self.shortcut_convs[2](residual)  # Downsample residual
         x = x + residual
         x = self.se_layer_3(x)
-        pooled_c3_s = self.pooling(x)
+        # pooled_c3_s = self.pooling(x)
 
         # Layer 4
         residual = x
@@ -408,7 +380,7 @@ class FeatureExtractor(nn.Module):
         residual = self.shortcut_convs[3](residual)  # Downsample residual
         x = x + residual
         x = self.se_layer_4(x)
-        pooled_c4_s = self.pooling(x)
+        # pooled_c4_s = self.pooling(x)
 
         # h_feature = torch.cat(
         #     (
@@ -548,7 +520,7 @@ class CrossModalAttention(nn.Module):
         self.input_size = input_size
 
         mlp_ratio = 4
-        dropout_rate = 0
+        dropout_rate = 0.2
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         self.mlp = Mlp(
             in_features=hidden_size,
@@ -649,7 +621,7 @@ class MambaFusionBlock(nn.Module):
             headdim=64,
         )
         mlp_ratio = 4
-        dropout_rate = 0
+        dropout_rate = 0.2
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
             in_features=dim,
@@ -679,10 +651,8 @@ class ClsHead(nn.Module):
         super(ClsHead, self).__init__()
         # Pooling layer to aggregate sequence information
         self.pooling = nn.AdaptiveAvgPool1d(1)
-        # self.norm = nn.BatchNorm1d(input_dim)
-        # self.norm = nn.GroupNorm(32, input_dim)
-        # self.act = nn.GELU()
-        dropout_rate = 0
+        self.act = nn.GELU()
+        dropout_rate = 0.2
         self.dropout = nn.Dropout(dropout_rate)
         # Fully connected layers
         self.fc = nn.Linear(input_dim, num_classes)
@@ -693,8 +663,7 @@ class ClsHead(nn.Module):
         # Permute and pool to reduce sequence dimension
         x = x.permute(0, 2, 1)  # [batch_size, feature_dim, sequence_length]
         x = self.pooling(x).squeeze(-1)  # [batch_size, feature_dim]
-        # x = self.norm(x)
-        # x = self.act(x)
+        x = self.act(x)
         x = self.dropout(x)
         # Classification layers
         x = self.fc(x)
@@ -702,26 +671,25 @@ class ClsHead(nn.Module):
 
 
 class MultiSeqMambaModel(nn.Module):
-    def __init__(self, in_channels=1, stem_channels=16, num_classes=2, spatial_dims=3):
+    def __init__(
+        self,
+        in_channels=1,
+        stem_channels=16,
+        num_classes=2,
+    ):
         super(MultiSeqMambaModel, self).__init__()
         embed_dim = stem_channels * 2**4
         # Define ConvStem for initial feature extraction
-        self.conv_stem = ConvStem(
-            in_channels=1,
-            out_channels=stem_channels,
-            spatial_dims=spatial_dims,
-        )
+        self.conv_stem = ConvStem(in_channels=1, out_channels=stem_channels)
 
         # Define feature extractor
-        self.feature_extractor = FeatureExtractor(
-            in_channels=stem_channels, spatial_dims=spatial_dims
-        )
+        self.feature_extractor = FeatureExtractor(in_channels=stem_channels)
 
         # Cross-modal attention block (hidden size is adjustable based on encoder channels and model design)
         self.cross_modal_attn_block = CrossModalAttention(
             hidden_size=embed_dim,
-            num_heads=4,
-            dropout_rate=0,
+            num_heads=8,
+            dropout_rate=0.2,
             qkv_bias=True,
             use_flash_attention=True,
         )
@@ -741,9 +709,9 @@ class MultiSeqMambaModel(nn.Module):
         #         nn.init.constant_(torch.as_tensor(m.bias), 0)
 
     def forward(self, x):
-        t1_sample = x[:, 0:1]
-        t2_sample = x[:, 1:2]
-        t1c_sample = x[:, 2:3]
+        t1_sample = x[:, 0:1, :, :, :]
+        t2_sample = x[:, 1:2, :, :, :]
+        t1c_sample = x[:, 2:3, :, :, :]
         # Move tensors through ConvStem
         t1_features = self.conv_stem(t1_sample)
         t2_features = self.conv_stem(t2_sample)
@@ -755,16 +723,11 @@ class MultiSeqMambaModel(nn.Module):
         t1c_features = self.feature_extractor(t1c_features)
 
         # Reshape features to (B, N, C) format for cross-attention
-
-        t1_flat = t1_features.view(
-            t1_features.size(0), t1_features.size(1), -1
-        ).permute(0, 2, 1)
-        t2_flat = t2_features.view(
-            t2_features.size(0), t2_features.size(1), -1
-        ).permute(0, 2, 1)
-        t1c_flat = t1c_features.view(
-            t1c_features.size(0), t1c_features.size(1), -1
-        ).permute(0, 2, 1)
+        batch_size, _, depth, height, width = t1_features.shape
+        flattened_size = int(depth * height * width)
+        t1_flat = t1_features.reshape(batch_size, flattened_size, -1)
+        t2_flat = t2_features.reshape(batch_size, flattened_size, -1)
+        t1c_flat = t1c_features.reshape(batch_size, flattened_size, -1)
 
         # Cross-modal attention
         t1_t2_attn_output = self.cross_modal_attn_block(t1_flat, context=t2_flat)
@@ -794,42 +757,52 @@ if __name__ == "__main__":
     in_channels = data_config["in_channels"]
     num_classes = data_config["num_classes"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    spatial_dims = 2
-    stem_channels = 32
-    x = torch.randn(batch_size, in_channels, input_size[0], input_size[1]).to(device)
 
-    t1_sample = x[:, 0:1]
-    t2_sample = x[:, 1:2]
-    t1c_sample = x[:, 2:3]
+    # Set parameters for the test
+    # batch_size = 2  # Number of samples in a batch
+    depth, height, width = (
+        input_size[0],
+        input_size[1],
+        input_size[2],
+    )  # Example dimensions for 3D MRI scans
+    # num_classes = 2  # Number of output classes (e.g., tumor vs. non-tumor)
+
+    stem_channels = 64
+    x = torch.randn(batch_size, in_channels, depth, height, width).to(device)
+    # Create sample inputs for T1, T2, and T1C (simulating 3D MRI sequences)
+    # Each tensor represents a batch of images with shape [batch_size, channels, depth, height, width]
+    t1_sample = x[:, 0:1, :, :, :]
+    t2_sample = x[:, 1:2, :, :, :]
+    t1c_sample = x[:, 2:3, :, :, :]
 
     t1_sample = t1_sample.to(device)
     t2_sample = t2_sample.to(device)
     t1c_sample = t1c_sample.to(device)
 
-    conv_stem = ConvStem(
-        in_channels=1, out_channels=stem_channels, spatial_dims=spatial_dims
-    ).to(device)
+    conv_stem = ConvStem(in_channels=1, out_channels=stem_channels).to(device)
     conv_stem_output = conv_stem(t1_sample)
 
-    feature_extractor = FeatureExtractor(
-        in_channels=stem_channels, spatial_dims=spatial_dims
-    ).to(device)
+    feature_extractor = FeatureExtractor(in_channels=stem_channels).to(device)
     feature_extractor_output = feature_extractor(conv_stem_output)
-
-    feature_extractor_output = feature_extractor_output.view(
-        feature_extractor_output.size(0), feature_extractor_output.size(1), -1
-    ).permute(0, 2, 1)
 
     cross_modal_attn_block = CrossModalAttention(
         hidden_size=stem_channels * 2**4,
-        num_heads=4,
-        dropout_rate=0,
+        num_heads=8,
+        dropout_rate=0.2,
         qkv_bias=True,
         use_flash_attention=True,
     ).to(device)
     # Reshape tensors to (B, N, C) format for cross-attention
-    tensor1_flat = feature_extractor_output
-    tensor2_flat = feature_extractor_output
+    tensor1_flat = feature_extractor_output.reshape(
+        batch_size,
+        int(depth * height * width / 2**5 / 2**5 / 2**5),
+        stem_channels * 2**4,
+    )
+    tensor2_flat = feature_extractor_output.reshape(
+        batch_size,
+        int(depth * height * width / 2**5 / 2**5 / 2**5),
+        stem_channels * 2**4,
+    )
     cross_modal_attn_block_output = cross_modal_attn_block(
         tensor1_flat, context=tensor2_flat
     )
@@ -843,21 +816,9 @@ if __name__ == "__main__":
 
     cls_head = ClsHead(
         input_dim=(stem_channels * 2**4),
-        num_classes=num_classes,
+        num_classes=2,
     ).to(device)
     cls_head_output = cls_head(mamba_fusion_block_output)
-
-    # Instantiate the model
-    model = MultiSeqMambaModel(
-        in_channels=in_channels,
-        num_classes=num_classes,
-        stem_channels=stem_channels,
-        spatial_dims=spatial_dims,
-    ).to(device)
-    img = torch.randn(batch_size, in_channels, input_size[0], input_size[1]).to(device)
-    summary(model=model, input_size=img.shape)
-    preds = model(img)
-    print(preds, preds[0].shape)
 
     # pooling = nn.AdaptiveAvgPool3d((1, 1, 1))
     # pooling_output = pooling(feature_extractor_output)
@@ -893,3 +854,14 @@ if __name__ == "__main__":
     #     device
     # )
     # msf_encoder_output4 = msf_encoder4(msf_encoder_output3)
+
+    # Instantiate the model
+    model = MultiSeqMambaModel(
+        in_channels=in_channels, num_classes=num_classes, stem_channels=stem_channels
+    ).to(device)
+    img = torch.randn(
+        batch_size, in_channels, input_size[0], input_size[1], input_size[2]
+    ).to(device)
+    summary(model=model, input_size=img.shape)
+    preds = model(img)
+    print(preds, preds[0].shape)

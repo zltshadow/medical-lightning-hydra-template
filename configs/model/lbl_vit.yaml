@@ -7,8 +7,8 @@ model_name: ViT
 _target_: src.models.lbl_module.LBLLitModule
 
 net:
-  _target_: src.models.components.vit.ViT
-  in_channels: 3
+  _target_: src.models.components.vit.VisionTransformer
+  in_chans: 3
   num_classes: 2
   # img_size: ${data.input_size}
   # patch_size: [16, 16]

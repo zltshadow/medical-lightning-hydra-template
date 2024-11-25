@@ -2,8 +2,8 @@
 _target_: src.data.2d_lbl_datamodule.LBLDataModule
 fold: train_val
 data_dir: /data/zlt/projects/data
-batch_size: 64
-num_workers: 16
+batch_size: 32
+num_workers: 8
 pin_memory: False # 数据集小的时候设置为False，数据集大的时候可以设置为True，减小数据从CPU复制到GPU的开销
 input_size: [224, 224]
 seed: 42

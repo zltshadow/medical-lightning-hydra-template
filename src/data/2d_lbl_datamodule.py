@@ -90,7 +90,7 @@ class LBLDataset(torch.utils.data.Dataset):
         self.image_files = image_files
         self.labels = labels
         self.transforms = transforms
-        self.load_data = LoadMulImage(reader=PILReader, resize=True)
+        self.load_data = LoadMulImage(reader=PILReader, resize=False)
 
     def __len__(self):
         return len(self.image_files)
