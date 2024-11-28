@@ -14,7 +14,7 @@ class ConvNeXt(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.model = timm.create_model("convnextv2_tiny", **kwargs)
+        self.model = timm.create_model("convnextv2_small", **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a single forward pass through the network.

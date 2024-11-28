@@ -17,10 +17,12 @@ from monai.transforms import (
     RandRotate,
     RandZoom,
     ScaleIntensity,
+    CropForeground,
     Resize,
     ToTensor,
 )
 from sklearn.model_selection import (
+    StratifiedKFold,
     StratifiedShuffleSplit,
 )
 from sklearn.utils import compute_class_weight
@@ -227,29 +229,52 @@ class LBLDataModule(LightningDataModule):
         # print(f"Label names: {class_names}")
         # print(f"Label counts: {[len(image_files[i]) for i in range(num_class)]}")
 
-        # 使用StratifiedShuffleSplit进行分层抽样
-        split = StratifiedShuffleSplit(
-            n_splits=1, test_size=0.4, train_size=0.6, random_state=seed
-        )
-        for train_index, test_index in split.split(image_files_list, image_class):
-            train_x, test_x = [image_files_list[i] for i in train_index], [
-                image_files_list[i] for i in test_index
+        # 设置交叉验证的折数
+        n_splits = 5
+
+        # 使用StratifiedKFold进行五折交叉验证
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+
+        # 创建一个分割对象，存储所有的训练集和验证集的索引
+        splits = list(skf.split(image_files_list, image_class))
+
+        if fold in range(n_splits):
+            train_index, val_index = splits[fold]
+
+            # 根据索引分割数据集
+            train_x, val_x = [image_files_list[i] for i in train_index], [
+                image_files_list[i] for i in val_index
             ]
-            train_y, test_y = [image_class[i] for i in train_index], [
-                image_class[i] for i in test_index
+            train_y, val_y = [image_class[i] for i in train_index], [
+                image_class[i] for i in val_index
             ]
 
-        # 进一步将测试集分为验证集和测试集，比例为1:1
-        test_split = StratifiedShuffleSplit(
-            n_splits=1, test_size=0.5, train_size=0.5, random_state=seed
-        )
-        for val_index, final_test_index in test_split.split(test_x, test_y):
-            val_x, final_test_x = [test_x[i] for i in val_index], [
-                test_x[i] for i in final_test_index
-            ]
-            val_y, final_test_y = [test_y[i] for i in val_index], [
-                test_y[i] for i in final_test_index
-            ]
+            final_test_x = val_x
+            final_test_y = val_y
+        elif fold == "train_val":
+            # 使用StratifiedShuffleSplit进行分层抽样
+            split = StratifiedShuffleSplit(
+                n_splits=1, test_size=0.4, train_size=0.6, random_state=seed
+            )
+            for train_index, test_index in split.split(image_files_list, image_class):
+                train_x, test_x = [image_files_list[i] for i in train_index], [
+                    image_files_list[i] for i in test_index
+                ]
+                train_y, test_y = [image_class[i] for i in train_index], [
+                    image_class[i] for i in test_index
+                ]
+
+            # 进一步将测试集分为验证集和测试集，比例为1:1
+            test_split = StratifiedShuffleSplit(
+                n_splits=1, test_size=0.5, train_size=0.5, random_state=seed
+            )
+            for val_index, final_test_index in test_split.split(test_x, test_y):
+                val_x, final_test_x = [test_x[i] for i in val_index], [
+                    test_x[i] for i in final_test_index
+                ]
+                val_y, final_test_y = [test_y[i] for i in val_index], [
+                    test_y[i] for i in final_test_index
+                ]
 
         print(
             f"Training count: {len(train_x)}, Validation count: {len(val_x)}, Test count: {len(final_test_x)}"
@@ -272,6 +297,7 @@ class LBLDataModule(LightningDataModule):
             [
                 # EnsureChannelFirst(),
                 ScaleIntensity(),
+                # CropForeground(),
                 # Resize((224, 224)),
                 RandRotate(range_x=np.pi / 12, prob=0.5, keep_size=True),
                 RandFlip(spatial_axis=0, prob=0.5),
@@ -287,6 +313,7 @@ class LBLDataModule(LightningDataModule):
             [
                 # EnsureChannelFirst(),
                 ScaleIntensity(),
+                # CropForeground(),
                 # Resize((224, 224)),
                 ToTensor(
                     track_meta=False,
@@ -413,9 +440,10 @@ if __name__ == "__main__":
     input_size = data_config["input_size"]
     dataset_name = "BraTs_TCGA_resample_2d"
     dataset_name = "LBL_all_reg_resample_2d"
+    dataset_name = data_config["dataset_name"]
     fold = 0
-    fold = "extest"
-    fold = "train_val"
+    # fold = "extest"
+    # fold = "train_val"
     # 默认模态是0000，测试0001
     lbl_dataset = LBLDataModule(
         data_dir=data_dir,
@@ -436,9 +464,9 @@ if __name__ == "__main__":
     print("Validation Image Shape:", image_val.shape)
     print("Test Image Shape:", image_test.shape)
 
-    image_slice_train = image_train[0, :, :]
-    image_slice_val = image_val[0, :, :]
-    image_slice_test = image_test[0, :, :]
+    image_slice_train = image_train[2, :, :]
+    image_slice_val = image_val[2, :, :]
+    image_slice_test = image_test[2, :, :]
 
     # 创建拼图，2行3列
     fig, axs = plt.subplots(2, 3, figsize=(15, 10))  # 2行3列

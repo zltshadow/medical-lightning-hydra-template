@@ -5,6 +5,7 @@ import yaml
 from src.utils.utils import add_torch_shape_forvs
 import torch
 from torch import nn
+from timm.models import SwinTransformerV2
 
 
 class SwinTransformer(nn.Module):
@@ -14,7 +15,16 @@ class SwinTransformer(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.model = timm.create_model("swin_tiny_patch4_window7_224", **kwargs)
+        # self.model = timm.create_model("swin_base_patch4_window7_224", **kwargs)
+        # swin_base_patch4_window7_224
+        self.model = SwinTransformerV2(
+            patch_size=4,
+            window_size=7,
+            embed_dim=128,
+            depths=(2, 2, 18, 2),
+            num_heads=(4, 8, 16, 32),
+            **kwargs,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a single forward pass through the network.

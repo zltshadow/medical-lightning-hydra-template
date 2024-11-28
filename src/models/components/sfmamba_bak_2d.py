@@ -161,7 +161,6 @@ class ConvStem(nn.Module):
             # nn.BatchNorm2d(out_channels),
             nn.GroupNorm(32, out_channels),
             nn.GELU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
         )
 
     def forward(self, x):
@@ -287,6 +286,8 @@ class FeatureExtractor(nn.Module):
             spatial_dims=spatial_dims,
             in_channels=out_channels_1,
             r=2,
+            acti_type_1="gelu",
+            acti_type_2="gelu",
             add_residual=True,
         )
         self.msf_encoder2 = MSFEncoder(
@@ -299,6 +300,8 @@ class FeatureExtractor(nn.Module):
             spatial_dims=spatial_dims,
             in_channels=out_channels_2,
             r=2,
+            acti_type_1="gelu",
+            acti_type_2="gelu",
             add_residual=True,
         )
         self.msf_encoder3 = MSFEncoder(
@@ -311,6 +314,8 @@ class FeatureExtractor(nn.Module):
             spatial_dims=spatial_dims,
             in_channels=out_channels_3,
             r=2,
+            acti_type_1="gelu",
+            acti_type_2="gelu",
             add_residual=True,
         )
         self.msf_encoder4 = MSFEncoder(
@@ -323,6 +328,8 @@ class FeatureExtractor(nn.Module):
             spatial_dims=spatial_dims,
             in_channels=out_channels_4,
             r=2,
+            acti_type_1="gelu",
+            acti_type_2="gelu",
             add_residual=True,
         )
         block_avgpool = [0, 1, (1, 1), (1, 1, 1)]
@@ -374,8 +381,8 @@ class FeatureExtractor(nn.Module):
         # Layer 1
         residual = x
         x = self.msf_encoder1(x)
-        residual = self.shortcut_convs[0](residual)  # Downsample residual
-        x = x + residual
+        # residual = self.shortcut_convs[0](residual)  # Downsample residual
+        # x = x + residual
         # x = self.se_layer_1(x)
         # pooled_c1_s = self.pooling(x)
 
@@ -384,24 +391,24 @@ class FeatureExtractor(nn.Module):
         x = self.msf_encoder2(x)
         residual = self.shortcut_convs[1](residual)  # Downsample residual
         x = x + residual
-        # x = self.se_layer_2(x)
-        # pooled_c2_s = self.pooling(x)
+        x = self.se_layer_2(x)
+        pooled_c2_s = self.pooling(x)
 
         # Layer 3
         residual = x
         x = self.msf_encoder3(x)
         residual = self.shortcut_convs[2](residual)  # Downsample residual
         x = x + residual
-        # x = self.se_layer_3(x)
-        # pooled_c3_s = self.pooling(x)
+        x = self.se_layer_3(x)
+        pooled_c3_s = self.pooling(x)
 
         # Layer 4
         residual = x
         x = self.msf_encoder4(x)
         residual = self.shortcut_convs[3](residual)  # Downsample residual
         x = x + residual
-        # x = self.se_layer_4(x)
-        # pooled_c4_s = self.pooling(x)
+        x = self.se_layer_4(x)
+        pooled_c4_s = self.pooling(x)
 
         # h_feature = torch.cat(
         #     (

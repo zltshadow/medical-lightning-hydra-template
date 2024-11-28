@@ -14,7 +14,7 @@ class VisionTransformer(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.model = timm.create_model("vit_small_patch16_224", **kwargs)
+        self.model = timm.create_model("vit_base_patch16_224", **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a single forward pass through the network.

@@ -1,6 +1,6 @@
 # _target_: src.data.mul_lbl_datamodule.LBLDataModule
 _target_: src.data.2d_lbl_datamodule.LBLDataModule
-fold: train_val
+fold: 0
 data_dir: /data/zlt/projects/data
 batch_size: 32
 num_workers: 8

@@ -2736,7 +2736,7 @@ if __name__ == "__main__":
     num_classes = data_config["num_classes"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = create_model(
-        model_name="vim_tiny_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_midclstok_div2",
+        model_name="vim_small_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_midclstok_div2",
         pretrained=False,
         num_classes=num_classes,
         channels=in_channels,

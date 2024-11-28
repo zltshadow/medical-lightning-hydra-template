@@ -1,14 +1,14 @@
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true
-  lr: 1e-5
+  lr: 5e-5
 
 scheduler:
   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
   _partial_: true
   mode: min
   factor: 0.1
-  patience: 100
+  patience: 5
   # _target_: monai.optimizers.WarmupCosineSchedule
   # _partial_: true
   # warmup_steps: 5
