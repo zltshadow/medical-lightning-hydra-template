@@ -1303,4 +1303,7 @@ CUDA_VISIBLE_DEVICES=2 python -m src.train -m tags="[resnet,test1]" model=lbl_re
 CUDA_VISIBLE_DEVICES=3 python -m src.train -m tags="[convnext,test1]" data.fold=train_val model=lbl_convnext data.dataset_name=LBL_all_reg
 CUDA_VISIBLE_DEVICES=4 python -m src.train -m tags="[vit,test1]" model=lbl_vit data.fold=train_val data.dataset_name=LBL_all_reg
 CUDA_VISIBLE_DEVICES=5 python -m src.train -m tags="[swint,test1]" model=lbl_swint data.fold=train_val data.dataset_name=LBL_all_reg
+CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[sfmamba,l4]" model=lbl_sfmamba data.fold=0,1,2,3,4
+CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[sfmamba,b4]" model=lbl_sfmamba data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d model.optimizer.lr=0.0001 trainer.max_epochs=10
 ```
+

@@ -155,10 +155,12 @@ class ConvStem(nn.Module):
                 padding=1,
             ),
             # nn.BatchNorm2d(out_channels),
+            # nn.ReLU(inplace=True),
             nn.GroupNorm(32, out_channels),
             nn.GELU(),
             conv_type(out_channels, out_channels, 3, padding=1),
             # nn.BatchNorm2d(out_channels),
+            # nn.ReLU(inplace=True),
             nn.GroupNorm(32, out_channels),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
@@ -201,44 +203,111 @@ class MambaLayer(nn.Module):
         return out
 
 
+class MultiScaleConvBlock(nn.Module):
+    def __init__(self, in_channels, scales=[3, 5, 7], spatial_dims=3):
+        super(MultiScaleConvBlock, self).__init__()
+
+        conv_type: type[nn.Conv1d | nn.Conv2d | nn.Conv3d] = Conv[
+            Conv.CONV, spatial_dims
+        ]
+
+        # Multi-scale convolutions
+        self.multi_scale_convs = nn.ModuleList(
+            [
+                nn.Sequential(
+                    conv_type(
+                        in_channels,
+                        in_channels // 2,
+                        kernel_size=1,
+                        stride=1,
+                        padding=0,
+                        bias=False,
+                    ),
+                    nn.GroupNorm(32, in_channels // 2),
+                    nn.GELU(),
+                    # Multi-scale convolution (3x3, 5x5, etc.)
+                    conv_type(
+                        in_channels // 2,
+                        in_channels // 2,
+                        kernel_size=s,
+                        stride=1,
+                        padding=s // 2,
+                        bias=False,
+                    ),
+                    nn.GroupNorm(32, in_channels // 2),
+                    nn.GELU(),
+                    # 1x1 convolution to restore original channels
+                    conv_type(
+                        in_channels // 2,
+                        in_channels,
+                        kernel_size=1,
+                        stride=1,
+                        padding=0,
+                        bias=False,
+                    ),
+                    nn.GroupNorm(32, in_channels),
+                    nn.GELU(),
+                )
+                for s in scales
+            ]
+        )
+
+        # Fusion convolution to combine multi-scale features
+        self.fusion_conv = nn.Sequential(
+            conv_type(in_channels * len(scales), in_channels, kernel_size=1),
+            nn.GroupNorm(32, in_channels),
+            nn.GELU(),
+        )
+
+    def forward(self, x):
+        residual = x
+
+        # Apply all multi-scale convolutions and concatenate the features
+        features = [conv(x) for conv in self.multi_scale_convs]
+        fused = torch.cat(features, dim=1)  # Concatenate along the channel dimension
+
+        # Fusion layer to reduce the combined features back to the original channels
+        fused = self.fusion_conv(fused)
+
+        # Add residual connection
+        fused = fused + residual
+
+        return fused
+
+
 class MSFEncoder(nn.Module):
     def __init__(
-        self, in_channels, out_channels, scales=[3, 5, 7], conv=True, spatial_dims=3
+        self,
+        in_channels,
+        out_channels,
+        scales=[3, 5, 7],
+        conv=True,
+        spatial_dims=3,
+        num_blocks=2,
     ):
         super(MSFEncoder, self).__init__()
+
         conv_type: type[nn.Conv1d | nn.Conv2d | nn.Conv3d] = Conv[
             Conv.CONV, spatial_dims
         ]
         self.out_channels = out_channels
         self.conv = conv
-        # 前两层多尺度卷积，最后两层Mamba
-        if conv:
-            # Multi-scale convolutions
-            self.multi_scale_convs = nn.ModuleList(
+        if self.conv:
+            # Stack of MultiScaleConvBlocks
+            self.blocks = nn.ModuleList(
                 [
-                    nn.Sequential(
-                        conv_type(
-                            in_channels, in_channels, kernel_size=s, padding=s // 2
-                        ),
-                        # nn.BatchNorm2d(in_channels),
-                        nn.GroupNorm(32, in_channels),
-                        nn.GELU(),
+                    MultiScaleConvBlock(
+                        in_channels=in_channels,
+                        scales=scales,
+                        spatial_dims=spatial_dims,
                     )
-                    for s in scales
+                    for i in range(num_blocks)
                 ]
             )
-
-            # 1x1 convolution to fuse channels after concatenation of multi-scale features
-            self.fusion_conv = nn.Sequential(
-                conv_type(in_channels * len(scales), in_channels, kernel_size=1),
-                # nn.BatchNorm2d(in_channels),
-                nn.GroupNorm(32, in_channels),
-                nn.GELU(),
-            )
         else:
-            self.mamba = MambaLayer(dim=in_channels)
+            self.blocks = nn.Sequential(MambaLayer(dim=in_channels))
 
-        # Downsampling layer to reduce spatial dimensions
+        # Downsampling layer
         self.downsample = nn.Sequential(
             conv_type(
                 in_channels,
@@ -248,24 +317,18 @@ class MSFEncoder(nn.Module):
                 padding=1,
                 bias=False,
             ),
-            # nn.BatchNorm2d(out_channels),
             nn.GroupNorm(32, out_channels),
             nn.GELU(),
         )
 
     def forward(self, x):
-        if self.conv:
-            # Apply each scale and concatenate along the channel dimension
-            residual = x
-            features = [conv(x) for conv in self.multi_scale_convs]
-            fused = torch.cat(features, dim=1)  # Concatenate along channels
-            fused = self.fusion_conv(fused)  # Reduce channels back to `out_channels`
-            fused = fused + residual
-            downscaled = self.downsample(fused)  # Downsample spatially
-        else:
-            fused = x
-            mamba_res = self.mamba(fused)
-            downscaled = self.downsample(mamba_res)  # Downsample spatially
+        # Apply the stacked blocks
+        for block in self.blocks:
+            x = block(x)
+
+        # Apply downsampling
+        downscaled = self.downsample(x)
+
         return downscaled
 
 
@@ -283,23 +346,11 @@ class FeatureExtractor(nn.Module):
             conv=True,
             spatial_dims=spatial_dims,
         )
-        self.se_layer_1 = ChannelSELayer(
-            spatial_dims=spatial_dims,
-            in_channels=out_channels_1,
-            r=2,
-            add_residual=True,
-        )
         self.msf_encoder2 = MSFEncoder(
             in_channels=out_channels_1,
             out_channels=out_channels_2,
             conv=True,
             spatial_dims=spatial_dims,
-        )
-        self.se_layer_2 = ChannelSELayer(
-            spatial_dims=spatial_dims,
-            in_channels=out_channels_2,
-            r=2,
-            add_residual=True,
         )
         self.msf_encoder3 = MSFEncoder(
             in_channels=out_channels_2,
@@ -307,23 +358,11 @@ class FeatureExtractor(nn.Module):
             conv=False,
             spatial_dims=spatial_dims,
         )
-        self.se_layer_3 = ChannelSELayer(
-            spatial_dims=spatial_dims,
-            in_channels=out_channels_3,
-            r=2,
-            add_residual=True,
-        )
         self.msf_encoder4 = MSFEncoder(
             in_channels=out_channels_3,
             out_channels=out_channels_4,
             conv=False,
             spatial_dims=spatial_dims,
-        )
-        self.se_layer_4 = ChannelSELayer(
-            spatial_dims=spatial_dims,
-            in_channels=out_channels_4,
-            r=2,
-            add_residual=True,
         )
         block_avgpool = [0, 1, (1, 1), (1, 1, 1)]
         avgp_type: type[
@@ -376,41 +415,24 @@ class FeatureExtractor(nn.Module):
         x = self.msf_encoder1(x)
         residual = self.shortcut_convs[0](residual)  # Downsample residual
         x = x + residual
-        # x = self.se_layer_1(x)
-        # pooled_c1_s = self.pooling(x)
 
         # Layer 2
         residual = x
         x = self.msf_encoder2(x)
         residual = self.shortcut_convs[1](residual)  # Downsample residual
         x = x + residual
-        # x = self.se_layer_2(x)
-        # pooled_c2_s = self.pooling(x)
 
         # Layer 3
         residual = x
         x = self.msf_encoder3(x)
         residual = self.shortcut_convs[2](residual)  # Downsample residual
         x = x + residual
-        # x = self.se_layer_3(x)
-        # pooled_c3_s = self.pooling(x)
 
         # Layer 4
         residual = x
         x = self.msf_encoder4(x)
         residual = self.shortcut_convs[3](residual)  # Downsample residual
         x = x + residual
-        # x = self.se_layer_4(x)
-        # pooled_c4_s = self.pooling(x)
-
-        # h_feature = torch.cat(
-        #     (
-        #         pooled_c2_s.reshape(pooled_c1_s.shape[0], pooled_c1_s.shape[1] * 2, 1),
-        #         pooled_c3_s.reshape(pooled_c1_s.shape[0], pooled_c1_s.shape[1] * 2, 2),
-        #         pooled_c4_s.reshape(pooled_c1_s.shape[0], pooled_c1_s.shape[1] * 2, 4),
-        #     ),
-        #     dim=2,
-        # )
 
         return x
 
@@ -695,7 +717,7 @@ class ClsHead(nn.Module):
 
 
 class MultiSeqMambaModel(nn.Module):
-    def __init__(self, in_channels=1, stem_channels=16, num_classes=2, spatial_dims=3):
+    def __init__(self, in_channels=1, stem_channels=64, num_classes=2, spatial_dims=3):
         super(MultiSeqMambaModel, self).__init__()
         embed_dim = stem_channels * 2**4
         # Define ConvStem for initial feature extraction
@@ -788,7 +810,7 @@ if __name__ == "__main__":
     num_classes = data_config["num_classes"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     spatial_dims = 2
-    stem_channels = 32
+    stem_channels = 64
     x = torch.randn(batch_size, in_channels, input_size[0], input_size[1]).to(device)
 
     t1_sample = x[:, 0:1]
