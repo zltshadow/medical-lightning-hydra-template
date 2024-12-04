@@ -1,5 +1,7 @@
+import os
 from typing import Any, Dict, Tuple
 
+import pandas as pd
 import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
@@ -301,10 +303,38 @@ class LBLLitModule(LightningModule):
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
+        # # Create a DataFrame from the test results
+        # test_results = pd.DataFrame(
+        #     {
+        #         "predictions": self.test_preds.tolist(),
+        #         "targets": self.test_targets.tolist(),
+        #         "probabilities": self.test_probs.tolist(),
+        #     }
+        # )
+
+        # os.makedirs("outputs", exisits_ok=True)
+        # # Save the results to an Excel file
+        # test_results.to_excel(
+        #     f"{self.hparams.model_name.lower()}_test_results.xlsx", index=False
+        # )
+
+        # Optionally, print confusion matrix and other details
         print(self.test_confusion_matrix(self.test_preds, self.test_targets))
-        # print(self.test_probs.tolist())
         print(self.test_preds.tolist())
         print(self.test_targets.tolist())
+
+    def predict_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+    ) -> None:
+        """Perform a single test step on a batch of data from the test set.
+
+        :param batch: A batch of data (a tuple) containing the input tensor of images and target
+            labels.
+        :param batch_idx: The index of the current batch.
+        """
+        loss, probs, preds, targets = self.model_step(batch)
+
+        return probs, preds, targets
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

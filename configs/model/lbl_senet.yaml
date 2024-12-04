@@ -1,0 +1,12 @@
+defaults:
+  - _self_
+  - optimizer
+
+model_name: SENet
+
+_target_: src.models.lbl_module.LBLLitModule
+
+net:
+  _target_: src.models.components.senet.SENet
+  in_chans: 3
+  num_classes: 2

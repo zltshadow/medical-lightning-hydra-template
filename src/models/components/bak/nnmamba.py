@@ -11,7 +11,7 @@ from src.utils.utils import add_torch_shape_forvs
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """3x3 convolution with padding."""
-    return nn.Conv2d(
+    return nn.Conv3d(
         in_planes,
         out_planes,
         kernel_size=3,
@@ -25,7 +25,7 @@ def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
 
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution."""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+    return nn.Conv3d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
 class BasicBlock(nn.Module):
@@ -36,10 +36,10 @@ class BasicBlock(nn.Module):
 
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
+        self.bn1 = nn.BatchNorm3d(planes)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = nn.BatchNorm3d(planes)
         self.downsample = downsample
         self.stride = stride
 
@@ -65,7 +65,7 @@ class BasicBlock(nn.Module):
 def make_res_layer(inplanes, planes, blocks, stride=1):
     downsample = nn.Sequential(
         conv1x1(inplanes, planes, stride),
-        nn.BatchNorm2d(planes),
+        nn.BatchNorm3d(planes),
     )
 
     layers = []
@@ -82,11 +82,11 @@ class MambaLayer(nn.Module):
         self.dim = dim
         self.nin = conv1x1(dim, dim)
         self.nin2 = conv1x1(dim, dim)
-        self.norm2 = nn.BatchNorm2d(dim)  # LayerNorm
+        self.norm2 = nn.BatchNorm3d(dim)  # LayerNorm
         self.relu2 = nn.ReLU(inplace=True)
         self.relu3 = nn.ReLU(inplace=True)
 
-        self.norm = nn.BatchNorm2d(dim)  # LayerNorm
+        self.norm = nn.BatchNorm3d(dim)  # LayerNorm
         self.relu = nn.ReLU(inplace=True)
         self.mamba = Mamba(
             d_model=dim,  # Model dimension d_model
@@ -158,17 +158,17 @@ class DoubleConv(nn.Module):
     def __init__(self, in_ch, out_ch, stride=1, kernel_size=3):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(
+            nn.Conv3d(
                 in_ch,
                 out_ch,
                 kernel_size=kernel_size,
                 stride=stride,
                 padding=int(kernel_size / 2),
             ),
-            nn.BatchNorm2d(out_ch),
+            nn.BatchNorm3d(out_ch),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1, dilation=1),
-            nn.BatchNorm2d(out_ch),
+            nn.Conv3d(out_ch, out_ch, 3, padding=1, dilation=1),
+            nn.BatchNorm3d(out_ch),
             nn.ReLU(inplace=True),
         )
 
@@ -181,8 +181,8 @@ class SingleConv(nn.Module):
     def __init__(self, in_ch, out_ch):
         super(SingleConv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
+            nn.Conv3d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm3d(out_ch),
             nn.ReLU(inplace=True),
         )
 
@@ -205,7 +205,7 @@ class nnMambaEncoder(nn.Module):
         self.layer2 = make_res_layer(channels * 2, channels * 4, blocks, stride=2)
         self.layer3 = make_res_layer(channels * 4, channels * 8, blocks, stride=2)
 
-        self.pooling = nn.AdaptiveAvgPool2d((1, 1))
+        self.pooling = nn.AdaptiveAvgPool3d((1, 1, 1))
 
         self.mamba_seq = MambaSeq(
             dim=channels * 2,  # Model dimension d_model
@@ -260,9 +260,10 @@ if __name__ == "__main__":
     in_channels = data_config["in_channels"]
     num_classes = data_config["num_classes"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = nnMambaEncoder(
-        in_ch=in_channels,
-        num_classes=num_classes,
+
+    model = nnMambaEncoder(in_ch=in_channels, num_classes=2).to(device)
+    img = torch.randn(
+        (batch_size, in_channels, input_size[0], input_size[1], input_size[2])
     ).to(device)
     summary(
         model,
@@ -271,10 +272,8 @@ if __name__ == "__main__":
             in_channels,
             input_size[0],
             input_size[1],
+            input_size[2],
         ),
-    )
-    img = torch.randn((batch_size, in_channels, input_size[0], input_size[1])).to(
-        device
     )
     preds = model(img)
     print(preds, preds[0].shape)

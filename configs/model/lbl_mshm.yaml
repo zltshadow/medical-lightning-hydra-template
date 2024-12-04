@@ -2,12 +2,12 @@ defaults:
   - _self_
   - optimizer
 
-model_name: SFMamba
+model_name: MSHM
 
 _target_: src.models.lbl_module.LBLLitModule
 
 net:
-  _target_: src.models.components.sfmamba.MultiSeqMambaModel
+  _target_: src.models.components.mshm.MultipleSequenceHybridMamba
   in_channels: 3
   stem_channels: 64
   num_classes: 2

@@ -1,8 +1,10 @@
+import os
 from typing import Any, Dict, List, Tuple
 
 import hydra
 import lightning as L
 import monai
+import pandas as pd
 import rootutils
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
@@ -84,10 +86,33 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log_hyperparameters(object_dict)
 
     log.info("Starting testing!")
-    trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    test_res = trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
 
+    predictions = trainer.predict(
+        model=model, dataloaders=datamodule.test_dataloader(), ckpt_path=cfg.ckpt_path
+    )
+    probs, preds, targets = [], [], []
+    for t in predictions:
+        probs = probs + t[0].tolist()
+        preds = preds + t[1].tolist()
+        targets = targets + t[2].tolist()
     # for predictions use trainer.predict(...)
-    # predictions = trainer.predict(model=model, dataloaders=dataloaders, ckpt_path=cfg.ckpt_path)
+    # predictions = trainer.predict(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    test_results = pd.DataFrame(
+        {
+            "predictions": preds,
+            "targets": targets,
+            "probabilities": probs,
+        }
+    )
+    # # Save the results to an Excel file
+    test_results.to_excel(
+        os.path.join(
+            cfg.paths.output_dir,
+            f"{cfg.model.model_name.lower()}_fold{cfg.data.fold}_test_results.xlsx",
+        ),
+        index=False,
+    )
 
     metric_dict = trainer.callback_metrics
 

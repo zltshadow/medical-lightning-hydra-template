@@ -716,9 +716,9 @@ class ClsHead(nn.Module):
         return x
 
 
-class MultiSeqMambaModel(nn.Module):
+class MultipleSequenceHybridMamba(nn.Module):
     def __init__(self, in_channels=1, stem_channels=64, num_classes=2, spatial_dims=3):
-        super(MultiSeqMambaModel, self).__init__()
+        super(MultipleSequenceHybridMamba, self).__init__()
         embed_dim = stem_channels * 2**4
         # Define ConvStem for initial feature extraction
         self.conv_stem = ConvStem(
@@ -863,7 +863,7 @@ if __name__ == "__main__":
     cls_head_output = cls_head(mamba_fusion_block_output)
 
     # Instantiate the model
-    model = MultiSeqMambaModel(
+    model = MultipleSequenceHybridMamba(
         in_channels=in_channels,
         num_classes=num_classes,
         stem_channels=stem_channels,
