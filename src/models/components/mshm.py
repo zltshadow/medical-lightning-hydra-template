@@ -307,6 +307,9 @@ class MSFEncoder(nn.Module):
         else:
             self.blocks = nn.Sequential(MambaLayer(dim=in_channels))
 
+        if num_blocks==0:
+            self.blocks=nn.Sequential()
+
         # Downsampling layer
         self.downsample = nn.Sequential(
             conv_type(
@@ -333,7 +336,7 @@ class MSFEncoder(nn.Module):
 
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, in_channels, spatial_dims):
+    def __init__(self, in_channels, spatial_dims, mamba_encoder=True):
         super(FeatureExtractor, self).__init__()
         out_channels_1 = in_channels * 2**1
         out_channels_2 = in_channels * 2**2
@@ -345,24 +348,28 @@ class FeatureExtractor(nn.Module):
             out_channels=out_channels_1,
             conv=True,
             spatial_dims=spatial_dims,
+            num_blocks=2,
         )
         self.msf_encoder2 = MSFEncoder(
             in_channels=out_channels_1,
             out_channels=out_channels_2,
             conv=True,
             spatial_dims=spatial_dims,
+            num_blocks=2,
         )
         self.msf_encoder3 = MSFEncoder(
             in_channels=out_channels_2,
             out_channels=out_channels_3,
-            conv=False,
+            conv=not mamba_encoder,
             spatial_dims=spatial_dims,
+            num_blocks=2 if mamba_encoder else 0,
         )
         self.msf_encoder4 = MSFEncoder(
             in_channels=out_channels_3,
             out_channels=out_channels_4,
-            conv=False,
+            conv=not mamba_encoder,
             spatial_dims=spatial_dims,
+            num_blocks=2 if mamba_encoder else 0,
         )
         block_avgpool = [0, 1, (1, 1), (1, 1, 1)]
         avgp_type: type[
@@ -689,6 +696,19 @@ class MambaFusionBlock(nn.Module):
         return out
 
 
+class FusionBlock(nn.Module):
+    def __init__(
+        self,
+        dim,
+    ):
+        super(FusionBlock, self).__init__()
+        self.fusion = nn.Sequential()
+
+    def forward(self, x):
+        out = self.fusion(x)
+        return out
+
+
 class ClsHead(nn.Module):
     def __init__(self, input_dim=256, num_classes=2):
         super(ClsHead, self).__init__()
@@ -717,9 +737,21 @@ class ClsHead(nn.Module):
 
 
 class MultipleSequenceHybridMamba(nn.Module):
-    def __init__(self, in_channels=1, stem_channels=64, num_classes=2, spatial_dims=3):
+    def __init__(
+        self,
+        in_channels=1,
+        stem_channels=64,
+        num_classes=2,
+        spatial_dims=3,
+        mamba_encoder=True,
+        cross_attn=True,
+        mamba_fusion=True,
+    ):
         super(MultipleSequenceHybridMamba, self).__init__()
         embed_dim = stem_channels * 2**4
+        self.mamba_encoder = mamba_encoder
+        self.cross_attn = cross_attn
+        self.mamba_fusion = mamba_fusion
         # Define ConvStem for initial feature extraction
         self.conv_stem = ConvStem(
             in_channels=1,
@@ -729,20 +761,26 @@ class MultipleSequenceHybridMamba(nn.Module):
 
         # Define feature extractor
         self.feature_extractor = FeatureExtractor(
-            in_channels=stem_channels, spatial_dims=spatial_dims
+            in_channels=stem_channels,
+            spatial_dims=spatial_dims,
+            mamba_encoder=mamba_encoder,
         )
 
-        # Cross-modal attention block (hidden size is adjustable based on encoder channels and model design)
-        self.cross_modal_attn_block = CrossModalAttention(
-            hidden_size=embed_dim,
-            num_heads=4,
-            dropout_rate=0,
-            qkv_bias=True,
-            use_flash_attention=True,
-        )
+        if self.cross_attn:
+            # Cross-modal attention block (hidden size is adjustable based on encoder channels and model design)
+            self.cross_modal_attn_block = CrossModalAttention(
+                hidden_size=embed_dim,
+                num_heads=4,
+                dropout_rate=0,
+                qkv_bias=True,
+                use_flash_attention=True,
+            )
 
-        # Mamba Fusion Block
-        self.mamba_fusion_block = MambaFusionBlock(dim=embed_dim)
+        if mamba_fusion:
+            # Mamba Fusion Block
+            self.fusion_block = MambaFusionBlock(dim=embed_dim)
+        else:
+            self.fusion_block = FusionBlock(dim=embed_dim)
 
         # Classification Head
         self.cls_head = ClsHead(input_dim=embed_dim, num_classes=num_classes)
@@ -781,10 +819,15 @@ class MultipleSequenceHybridMamba(nn.Module):
             t1c_features.size(0), t1c_features.size(1), -1
         ).permute(0, 2, 1)
 
-        # Cross-modal attention
-        t1_t2_attn_output = self.cross_modal_attn_block(t1_flat, context=t2_flat)
-        t2_t1c_attn_output = self.cross_modal_attn_block(t2_flat, context=t1c_flat)
-        t1c_t1_attn_output = self.cross_modal_attn_block(t1c_flat, context=t1_flat)
+        if self.cross_attn:
+            # Cross-modal attention
+            t1_t2_attn_output = self.cross_modal_attn_block(t1_flat, context=t2_flat)
+            t2_t1c_attn_output = self.cross_modal_attn_block(t2_flat, context=t1c_flat)
+            t1c_t1_attn_output = self.cross_modal_attn_block(t1c_flat, context=t1_flat)
+        else:
+            t1_t2_attn_output = t1_flat
+            t2_t1c_attn_output = t2_flat
+            t1c_t1_attn_output = t1c_flat
 
         # Concatenate cross-attention outputs for fusion
         combined_features = torch.cat(
@@ -792,7 +835,7 @@ class MultipleSequenceHybridMamba(nn.Module):
         )
 
         # Mamba Fusion Block
-        fused_features = self.mamba_fusion_block(combined_features)
+        fused_features = self.fusion_block(combined_features)
 
         # Classification Head
         output = self.cls_head(fused_features)
@@ -813,54 +856,54 @@ if __name__ == "__main__":
     stem_channels = 64
     x = torch.randn(batch_size, in_channels, input_size[0], input_size[1]).to(device)
 
-    t1_sample = x[:, 0:1]
-    t2_sample = x[:, 1:2]
-    t1c_sample = x[:, 2:3]
+    # t1_sample = x[:, 0:1]
+    # t2_sample = x[:, 1:2]
+    # t1c_sample = x[:, 2:3]
 
-    t1_sample = t1_sample.to(device)
-    t2_sample = t2_sample.to(device)
-    t1c_sample = t1c_sample.to(device)
+    # t1_sample = t1_sample.to(device)
+    # t2_sample = t2_sample.to(device)
+    # t1c_sample = t1c_sample.to(device)
 
-    conv_stem = ConvStem(
-        in_channels=1, out_channels=stem_channels, spatial_dims=spatial_dims
-    ).to(device)
-    conv_stem_output = conv_stem(t1_sample)
+    # conv_stem = ConvStem(
+    #     in_channels=1, out_channels=stem_channels, spatial_dims=spatial_dims
+    # ).to(device)
+    # conv_stem_output = conv_stem(t1_sample)
 
-    feature_extractor = FeatureExtractor(
-        in_channels=stem_channels, spatial_dims=spatial_dims
-    ).to(device)
-    feature_extractor_output = feature_extractor(conv_stem_output)
+    # feature_extractor = FeatureExtractor(
+    #     in_channels=stem_channels, spatial_dims=spatial_dims
+    # ).to(device)
+    # feature_extractor_output = feature_extractor(conv_stem_output)
 
-    feature_extractor_output = feature_extractor_output.view(
-        feature_extractor_output.size(0), feature_extractor_output.size(1), -1
-    ).permute(0, 2, 1)
+    # feature_extractor_output = feature_extractor_output.view(
+    #     feature_extractor_output.size(0), feature_extractor_output.size(1), -1
+    # ).permute(0, 2, 1)
 
-    cross_modal_attn_block = CrossModalAttention(
-        hidden_size=stem_channels * 2**4,
-        num_heads=4,
-        dropout_rate=0,
-        qkv_bias=True,
-        use_flash_attention=True,
-    ).to(device)
-    # Reshape tensors to (B, N, C) format for cross-attention
-    tensor1_flat = feature_extractor_output
-    tensor2_flat = feature_extractor_output
-    cross_modal_attn_block_output = cross_modal_attn_block(
-        tensor1_flat, context=tensor2_flat
-    )
+    # cross_modal_attn_block = CrossModalAttention(
+    #     hidden_size=stem_channels * 2**4,
+    #     num_heads=4,
+    #     dropout_rate=0,
+    #     qkv_bias=True,
+    #     use_flash_attention=True,
+    # ).to(device)
+    # # Reshape tensors to (B, N, C) format for cross-attention
+    # tensor1_flat = feature_extractor_output
+    # tensor2_flat = feature_extractor_output
+    # cross_modal_attn_block_output = cross_modal_attn_block(
+    #     tensor1_flat, context=tensor2_flat
+    # )
 
-    mamba_fusion_block = MambaFusionBlock(
-        dim=cross_modal_attn_block_output.shape[-1]
-    ).to(device)
-    mamba_fusion_block_output = mamba_fusion_block(
-        torch.repeat_interleave(cross_modal_attn_block_output, repeats=3, dim=1)
-    )
+    # mamba_fusion_block = MambaFusionBlock(
+    #     dim=cross_modal_attn_block_output.shape[-1]
+    # ).to(device)
+    # mamba_fusion_block_output = mamba_fusion_block(
+    #     torch.repeat_interleave(cross_modal_attn_block_output, repeats=3, dim=1)
+    # )
 
-    cls_head = ClsHead(
-        input_dim=(stem_channels * 2**4),
-        num_classes=num_classes,
-    ).to(device)
-    cls_head_output = cls_head(mamba_fusion_block_output)
+    # cls_head = ClsHead(
+    #     input_dim=(stem_channels * 2**4),
+    #     num_classes=num_classes,
+    # ).to(device)
+    # cls_head_output = cls_head(mamba_fusion_block_output)
 
     # Instantiate the model
     model = MultipleSequenceHybridMamba(
@@ -868,6 +911,9 @@ if __name__ == "__main__":
         num_classes=num_classes,
         stem_channels=stem_channels,
         spatial_dims=spatial_dims,
+        mamba_encoder=False,
+        cross_attn=False,
+        mamba_fusion=False,
     ).to(device)
     img = torch.randn(batch_size, in_channels, input_size[0], input_size[1]).to(device)
     summary(model=model, input_size=img.shape)

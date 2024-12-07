@@ -15,7 +15,7 @@ task_name: "eval"
 
 tags: ['mshm']
 # mshm
-ckpt_path: ${paths.root_dir}/logs/train/runs/2024-12-04_18-13-05/checkpoints/SFMamba.ckpt
+ckpt_path: ${paths.root_dir}/logs/train/multiruns/2024-12-05_08-18-22/0/checkpoints/MSHM.ckpt
 # # mamba
 # ckpt_path: ${paths.root_dir}/logs/train/multiruns/2024-11-07_20-14-41/0/checkpoints/epoch_032.ckpt
 # resnet
