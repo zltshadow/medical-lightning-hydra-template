@@ -1324,52 +1324,39 @@ CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mshm,bra]" model=lbl_mshm d
 
 ablation
 ```
-# Experiment 1: Disable all components (Mamba Encoder, Cross Attention, Mamba Fusion)
-CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mshm_000,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=False model.net.cross_attn=False model.net.mamba_fusion=False model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mshm_000,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=False model.net.cross_attn=False model.net.mamba_fusion=False model.optimizer.lr=0.000005
 
-# Experiment 2: Enable Cross Attention, Disable Mamba Encoder and Mamba Fusion
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_001,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=False model.net.cross_attn=True model.net.mamba_fusion=False model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_001,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=False model.net.cross_attn=False model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
-# Experiment 3: Enable Mamba Fusion, Disable Mamba Encoder and Cross Attention
-CUDA_VISIBLE_DEVICES=2 python -m src.train -m tags="[mshm_010,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=False model.net.cross_attn=False model.net.mamba_fusion=True model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=2 python -m src.train -m tags="[mshm_010,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=False model.net.cross_attn=True model.net.mamba_fusion=False model.optimizer.lr=0.000005
 
-# Experiment 4: Enable Mamba Encoder, Disable Cross Attention and Mamba Fusion
-CUDA_VISIBLE_DEVICES=3 python -m src.train -m tags="[mshm_011,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=False model.net.mamba_fusion=False model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=3 python -m src.train -m tags="[mshm_011,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=False model.net.cross_attn=True model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
-# Experiment 5: Enable Mamba Encoder and Cross Attention, Disable Mamba Fusion
-CUDA_VISIBLE_DEVICES=4 python -m src.train -m tags="[mshm_100,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=True model.net.mamba_fusion=False model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=4 python -m src.train -m tags="[mshm_100,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=False model.net.mamba_fusion=False model.optimizer.lr=0.000005
 
-# Experiment 6: Enable Mamba Encoder and Mamba Fusion, Disable Cross Attention
-CUDA_VISIBLE_DEVICES=5 python -m src.train -m tags="[mshm_101,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=False model.net.mamba_fusion=True model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=5 python -m src.train -m tags="[mshm_101,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=False model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
-# Experiment 7: Enable Mamba Encoder and Mamba Fusion, Disable Mamba Fusion
-CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mshm_110,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=True model.net.mamba_fusion=True model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mshm_110,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=True model.net.mamba_fusion=False model.optimizer.lr=0.000005
 
-# Experiment 8: Enable all components (Mamba Encoder, Cross Attention, Mamba Fusion)
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_111,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=True model.net.mamba_fusion=True model.optimizer.lr=0.00001
+CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_111,lbl_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 model.net.mamba_encoder=True model.net.cross_attn=True model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
 ```
 
 ```
-# Experiment 1: Disable all components (Mamba Encoder, Cross Attention, Mamba Fusion)
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_000,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.mamba_encoder=False model.cross_attn=False model.mamba_fusion=False
+CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mshm_000,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=False model.net.cross_attn=False model.net.mamba_fusion=False model.optimizer.lr=0.000005
 
-# Experiment 2: Enable Cross Attention, Disable Mamba Encoder and Mamba Fusion
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_001,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.mamba_encoder=False model.cross_attn=True model.mamba_fusion=False
+CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_001,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=False model.net.cross_attn=False model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
-# Experiment 3: Enable Mamba Fusion, Disable Mamba Encoder and Cross Attention
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_010,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.mamba_encoder=False model.cross_attn=False model.mamba_fusion=True
+CUDA_VISIBLE_DEVICES=2 python -m src.train -m tags="[mshm_010,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=False model.net.cross_attn=True model.net.mamba_fusion=False model.optimizer.lr=0.000005
 
-# Experiment 4: Enable Mamba Encoder, Disable Cross Attention and Mamba Fusion
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_011,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.mamba_encoder=True model.cross_attn=False model.mamba_fusion=False
+CUDA_VISIBLE_DEVICES=3 python -m src.train -m tags="[mshm_011,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=False model.net.cross_attn=True model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
-# Experiment 5: Enable Mamba Encoder and Cross Attention, Disable Mamba Fusion
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_100,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.mamba_encoder=True model.cross_attn=True model.mamba_fusion=False
+CUDA_VISIBLE_DEVICES=4 python -m src.train -m tags="[mshm_100,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=True model.net.cross_attn=False model.net.mamba_fusion=False model.optimizer.lr=0.000005
 
-# Experiment 6: Enable Mamba Encoder and Mamba Fusion, Disable Cross Attention
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_101,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.mamba_encoder=True model.cross_attn=False model.mamba_fusion=True
+CUDA_VISIBLE_DEVICES=5 python -m src.train -m tags="[mshm_101,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=True model.net.cross_attn=False model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
-# Experiment 7: Enable all components (Mamba Encoder, Cross Attention, Mamba Fusion)
-CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_111,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.mamba_encoder=True model.cross_attn=True model.mamba_fusion=True
+CUDA_VISIBLE_DEVICES=0 python -m src.train -m tags="[mshm_110,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=True model.net.cross_attn=True model.net.mamba_fusion=False model.optimizer.lr=0.000005
+
+CUDA_VISIBLE_DEVICES=1 python -m src.train -m tags="[mshm_111,bra_ablation]" model=lbl_mshm data.fold=0,1,2,3,4 data.dataset_name=BraTs_TCGA_2d trainer.max_epochs=10 model.net.mamba_encoder=True model.net.cross_attn=True model.net.mamba_fusion=True model.optimizer.lr=0.000005
 
 ```

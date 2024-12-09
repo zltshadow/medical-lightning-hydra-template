@@ -80,19 +80,32 @@ def get_preds_result():
     plot_roc_curve(results_dict["bra"], "bra")
 
 
-def compute_and_save_metrics(results_dict, save_name):
-    model_names_map = {
-        "resnet": "ResNet",
-        "senet": "SENet",
-        "convnext": "ConvNeXt",
-        "vit": "ViT",
-        "gcvit": "GCViT",
-        "swint": "SwinT",
-        "medmamba": "MedMamba",
-        "nnmamba": "nnMamba",
-        "vim": "ViM",
-        "mshm": "MSHM",
-    }
+def compute_and_save_metrics(results_dict, save_name, ablation=False):
+    model_names_map = (
+        {
+            "resnet": "ResNet",
+            "senet": "SENet",
+            "convnext": "ConvNeXt",
+            "vit": "ViT",
+            "gcvit": "GCViT",
+            "swint": "SwinT",
+            "medmamba": "MedMamba",
+            "nnmamba": "nnMamba",
+            "vim": "ViM",
+            "mshm": "MSHM",
+        }
+        if not ablation
+        else {
+            "mshm_000": "mshm_000",
+            "mshm_001": "mshm_001",
+            "mshm_010": "mshm_010",
+            "mshm_011": "mshm_011",
+            "mshm_100": "mshm_100",
+            "mshm_101": "mshm_101",
+            "mshm_110": "mshm_110",
+            "mshm_111": "mshm_111",
+        }
+    )
 
     # Prepare a dictionary to store average values and std for each model
     avg_metrics_dict = {model: [] for model in model_names_map.keys()}
@@ -230,7 +243,63 @@ def plot_roc_curve(results_dict, save_name):
     plt.savefig(f"{output_dir}/{save_name}_roc.jpg", dpi=300)
 
 
+def get_ablation_result():
+    preds_list = read_dir(
+        "logs/train/ablation", lambda x: x.endswith(".xlsx"), recursive=True
+    )
+    model_names = [
+        "mshm_000",
+        "mshm_001",
+        "mshm_010",
+        "mshm_011",
+        "mshm_100",
+        "mshm_101",
+        "mshm_110",
+        "mshm_111",
+    ]
+    results_dict = {
+        "lbl": {i: {} for i in model_names},
+        "bra": {i: {} for i in model_names},
+    }
+    for excel in preds_list:
+        with open(
+            f"{Path(excel).parent}/.hydra/config.yaml", "r", encoding="utf-8"
+        ) as f:
+            res_df = pd.read_excel(excel)
+            res_df["predictions"]
+            res_df["targets"]
+            res_df["probabilities"]
+            cfg = yaml.load(f.read(), Loader=yaml.FullLoader)
+            if cfg["data"]["dataset_name"] == "LBL_all_reg_resample_2d":
+                results_dict["lbl"][cfg["tags"][0].lower()][cfg["data"]["fold"]] = {}
+                results_dict["lbl"][cfg["tags"][0].lower()][cfg["data"]["fold"]][
+                    "preds"
+                ] = res_df["predictions"].tolist()
+                results_dict["lbl"][cfg["tags"][0].lower()][cfg["data"]["fold"]][
+                    "targets"
+                ] = res_df["targets"]
+                results_dict["lbl"][cfg["tags"][0].lower()][cfg["data"]["fold"]][
+                    "probs"
+                ] = res_df["probabilities"].tolist()
+            else:
+                results_dict["bra"][cfg["tags"][0].lower()][cfg["data"]["fold"]] = {}
+                results_dict["bra"][cfg["tags"][0].lower()][cfg["data"]["fold"]][
+                    "preds"
+                ] = res_df["predictions"].tolist()
+                results_dict["bra"][cfg["tags"][0].lower()][cfg["data"]["fold"]][
+                    "targets"
+                ] = res_df["targets"].tolist()
+                results_dict["bra"][cfg["tags"][0].lower()][cfg["data"]["fold"]][
+                    "probs"
+                ] = res_df["probabilities"].tolist()
+
+    # Call the function to compute and save the metrics table
+    compute_and_save_metrics(results_dict["lbl"], "lbl_ablation", ablation=True)
+    compute_and_save_metrics(results_dict["bra"], "bra_ablation", ablation=True)
+
+
 if __name__ == "__main__":
     output_dir = "outputs"
     os.makedirs(output_dir, exist_ok=True)
     get_preds_result()
+    get_ablation_result()
