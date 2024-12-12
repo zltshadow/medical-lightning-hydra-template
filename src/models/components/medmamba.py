@@ -1000,7 +1000,7 @@ if __name__ == "__main__":
         in_chans=in_channels,
         num_classes=num_classes,
         depths=[2, 2, 4, 2],
-        dims=[96,192,384,768],
+        dims=[96, 192, 384, 768],
     ).to(device)
     summary(
         model,
@@ -1016,3 +1016,6 @@ if __name__ == "__main__":
     )
     preds = model(img)
     print(preds, preds[0].shape)
+    print(model)
+    for name, _ in model.named_modules():
+        print(name)

@@ -1,6 +1,9 @@
 import os
 from typing import Any, Dict, Tuple
 
+import cv2
+from matplotlib import cm, pyplot as plt
+import numpy as np
 import pandas as pd
 import torch
 from lightning import LightningModule
@@ -16,6 +19,20 @@ from torchmetrics.classification import (
 
 # 初始化指标
 import torch.nn.functional as F
+
+# from monai.visualize import CAM, GradCAM, GradCAMpp
+from pytorch_grad_cam import (
+    GradCAM,
+    HiResCAM,
+    ScoreCAM,
+    GradCAMPlusPlus,
+    AblationCAM,
+    XGradCAM,
+    EigenCAM,
+    FullGrad,
+)
+from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from pytorch_grad_cam.utils.image import show_cam_on_image
 
 
 class LBLLitModule(LightningModule):
@@ -333,6 +350,284 @@ class LBLLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         loss, probs, preds, targets = self.model_step(batch)
+        # image = batch[0]
+        # label = batch[1]
+        # x = image
+        # y = label
+        # logits = self.net(x)
+        model = self.net
+        # model_name = "resnet"
+        model_name = model._get_name()
+        model_name = model_name.lower()
+        # for name, _ in model.named_modules():
+        #     print(name)
+        # 模型层配置字典
+        layer_configs = {
+            "resnet": {
+                "target_layers": "model.layer4",
+                "fc_layers": "model.fc",
+            },
+            "senet": {
+                "target_layers": "model.layer4",
+                "fc_layers": "model.fc",
+            },
+            "convnext": {
+                "target_layers": "model.stages.3",
+                "fc_layers": "model.head",
+            },
+            "visiontransformer": {
+                "target_layers": "model.blocks.11",
+                "fc_layers": "model.head",
+            },
+            "globalcontextvit": {
+                "target_layers": "model.stages.3",
+                "fc_layers": "model.head",
+            },
+            "swintransformer": {
+                "target_layers": "model.layers.3",
+                "fc_layers": "model.head",
+            },
+            "vssm": {
+                "target_layers": "layers.3",
+                "fc_layers": "head",
+            },
+            "nnmambaencoder": {
+                "target_layers": "layer3",
+                "fc_layers": "mlp",
+            },
+            "visionmamba": {
+                "target_layers": "layers.23",
+                "fc_layers": "norm_f",
+            },
+            "multiplesequencehybridmamba": {
+                "target_layers": "feature_extractor.msf_encoder4",
+                "fc_layers": "cls_head",
+            },
+        }
+        # with torch.set_grad_enabled(True):
+        with torch.enable_grad():
+            with torch.inference_mode(False):
+                # model.train()
+                # image = image.requires_grad_(True)
+                # torchinfo.summary(model, input_data=img)
+                grad_image = batch[0].clone().requires_grad_(True)
+                model = model
+
+                input_tensor = grad_image
+                if model_name == "resnet":
+                    target_layers = [model.model.layer4]
+                    cam = GradCAM(model=model, target_layers=target_layers)
+                elif model_name == "senet":
+                    target_layers = [model.model.layer4]
+                    cam = GradCAM(model=model, target_layers=target_layers)
+                elif model_name == "convnext":
+                    target_layers = [model.model.stages[-1]]
+                    cam = GradCAM(model=model, target_layers=target_layers)
+                elif model_name == "visiontransformer":
+                    target_layers = [model.model.blocks[-1].norm1]
+
+                    def reshape_transform(tensor, height=14, width=14):
+                        result = tensor[:, 1:, :].reshape(
+                            tensor.size(0), height, width, tensor.size(2)
+                        )
+
+                        # Bring the channels to the first dimension,
+                        # like in CNNs.
+                        result = result.transpose(2, 3).transpose(1, 2)
+                        return result
+
+                    cam = GradCAM(
+                        model=model,
+                        target_layers=target_layers,
+                        reshape_transform=reshape_transform,
+                    )
+                elif model_name == "globalcontextvit":
+
+                    # def reshape_transform(tensor, height=14, width=14):
+                    #     result = tensor[:, 1:, :].reshape(
+                    #         tensor.size(0), height, width, tensor.size(2)
+                    #     )
+
+                    #     # Bring the channels to the first dimension,
+                    #     # like in CNNs.
+                    #     result = result.transpose(2, 3).transpose(1, 2)
+                    #     return result
+
+                    target_layers = [model.model.stages[-1]]
+                    cam = GradCAM(
+                        model=model,
+                        target_layers=target_layers,
+                        # reshape_transform=reshape_transform,
+                    )
+                elif model_name == "swintransformer":
+                    target_layers = [model.model.layers[-1].blocks[-1].norm2]
+
+                    def reshape_transform(tensor, height=7, width=7):
+                        result = tensor.reshape(
+                            tensor.size(0), height, width, tensor.size(2)
+                        )
+
+                        # Bring the channels to the first dimension,
+                        # like in CNNs.
+                        result = result.transpose(2, 3).transpose(1, 2)
+                        return result
+
+                    cam = GradCAM(
+                        model=model,
+                        target_layers=target_layers,
+                        reshape_transform=reshape_transform,
+                    )
+                elif model_name == "vssm":
+
+                    # def reshape_transform(tensor, height=14, width=14):
+                    #     result = tensor[:, 1:, :].reshape(
+                    #         tensor.size(0), height, width, tensor.size(2)
+                    #     )
+
+                    #     # Bring the channels to the first dimension,
+                    #     # like in CNNs.
+                    #     result = result.transpose(2, 3).transpose(1, 2)
+                    #     return result
+
+                    target_layers = [model.layers[-1].blocks[-1].conv33conv33conv11[0]]
+                    cam = GradCAM(
+                        model=model,
+                        target_layers=target_layers,
+                        # reshape_transform=reshape_transform,
+                    )
+                elif model_name == "nnmambaencoder":
+                    target_layers = [model.layer3]
+                    cam = GradCAM(model=model, target_layers=target_layers)
+                elif model_name == "visionmamba":
+
+                    def reshape_transform(tensor, height=14, width=14):
+                        result = tensor[:, 1:, :].reshape(
+                            tensor.size(0), height, width, tensor.size(2)
+                        )
+
+                        # Bring the channels to the first dimension,
+                        # like in CNNs.
+                        result = result.transpose(2, 3).transpose(1, 2)
+                        return result
+
+                    target_layers = [model.layers[-1].drop_path]
+                    cam = GradCAM(
+                        model=model,
+                        target_layers=target_layers,
+                        reshape_transform=reshape_transform,
+                    )
+                elif model_name == "multiplesequencehybridmamba":
+                    target_layers = [model.feature_extractor.msf_encoder4]
+                    cam = GradCAM(model=model, target_layers=target_layers)
+
+                else:
+                    raise ValueError(f"Unsupported model_name: {model_name}")
+
+                grayscale_cam = cam(input_tensor=input_tensor, targets=None)
+                # In this example grayscale_cam has only one image in the batch:
+                grayscale_cam = grayscale_cam[0, :]
+                gray_img = grad_image[0, 0].cpu().detach().numpy()
+                rgb_img = np.stack([gray_img] * 3, axis=-1)
+                cam_image = show_cam_on_image(rgb_img, grayscale_cam)
+                output_dir = "outputs/cam"
+                os.makedirs(output_dir, exist_ok=True)
+                cv2.imwrite(f"{output_dir}/{model_name}_cam.jpg", cam_image)
+
+                # gradcampp = GradCAM(
+                #     nn_module=model,
+                #     target_layers=layer_configs[model_name]["target_layers"],
+                # )
+                # cam_result = gradcampp(x=grad_image, class_idx=None)
+                # # model = model.to(cpu)
+                # # cam_result = gradcampp(x=torch.rand((32, 3, 224, 224)), class_idx=None)
+
+                # cam_result = 1 - cam_result
+                # seq_idx = 0
+                # batch_idx = 0
+                # # plt.imshow(1 - np.squeeze(cam(x=img,class_idx=1)[:, :, :, :, depth_slice]).detach().cpu().numpy(), cmap='jet')
+                # # plt.imshow(np.squeeze(cam(x=img,class_idx=1)[:, :, :, :, depth_slice]).detach().cpu().numpy(), cmap='jet')
+                # # 提取原始图像的单个切片并转换为灰度图
+                # original_slice = np.squeeze(
+                #     image[: batch_idx + 1, seq_idx, :, :].detach().cpu().numpy()
+                # )
+                # # # 归一化到0..1范围
+                # # original_slice = (original_slice - original_slice.min()) / (
+                # #     original_slice.max() - original_slice.min()
+                # # )
+                # # 将灰度图转换为伪RGB格式
+                # original_slice_gray = (original_slice * 255).astype(np.uint8)
+                # original_slice_rgb = np.stack([original_slice_gray] * 3, axis=-1)
+                # attention_slice = (
+                #     cam_result[: batch_idx + 1, seq_idx, :, :].detach().cpu().numpy()
+                # )
+                # attention_slice = np.squeeze(
+                #     (attention_slice - attention_slice.min())
+                #     / (attention_slice.max() - attention_slice.min())
+                # )
+                # # 忽略jet中透明度的通道
+                # attention_rgb = cm.jet(attention_slice)[:, :, :3]
+                # # 调整热力图的透明度
+                # alpha = 0.5
+                # # 创建一个掩码，其中 attention_rgb 为 0 的地方掩码值为 0，其他地方为 1
+                # mask = np.where(attention_rgb > 0, 1, 0)
+                # # 将掩码应用于 attention_rgb，这样在 attention_rgb 为 0 的地方，掩码值为 0
+                # # 这样在这些地方叠加时不会改变 original_slice_rgb 的值
+                # masked_attention_rgb = attention_rgb * mask
+                # # # 叠加图像
+                # # overlay_result = (
+                # #     original_slice_rgb / 255 * (1 - alpha * mask) + masked_attention_rgb * alpha
+                # # )
+                # # 不处理的叠加方式
+                # overlay_result = (
+                #     original_slice_rgb / 255 * (1 - alpha) + attention_rgb * alpha
+                # )
+
+                # # 绘制三个图像：原始图像、注意力图、叠加后的图像
+                # fig, axes = plt.subplots(1, 3, figsize=(30, 15), facecolor="white")
+
+                # # 原始图像
+                # cmap_gray = "gray"
+                # ax = axes[0]
+                # im_show = ax.imshow(original_slice, cmap=cmap_gray)
+                # ax.axis("off")
+                # fig.colorbar(im_show, ax=ax)
+                # ax.set_title("Original Image")
+
+                # # 注意力图
+                # cmap_jet = "jet"
+                # ax = axes[1]
+                # im_show = ax.imshow(attention_slice, cmap=cmap_jet)
+                # ax.axis("off")
+                # fig.colorbar(im_show, ax=ax)
+                # ax.set_title("Attention Map")
+
+                # # 叠加后的图像
+                # ax = axes[2]
+                # ax.imshow(overlay_result)
+                # ax.axis("off")
+                # ax.set_title("Overlay Image")
+
+                # # 保存叠加后的图像
+                # # overlay_img_path = (
+                # #     f"{hm_output_dir}/hm_{mode}_{sequence_name}_{model_name}.jpg"
+                # # )
+                # overlay_img_path = f"{model_name}_test_hm.jpg"
+                # plt.imsave(overlay_img_path, overlay_result)
+                # # # 显示并关闭图像
+                # # plt.show()
+                # # plt.close(fig)
+                # print(f"Overlay image saved to {overlay_img_path}")
+                # cam = CAM(
+                #     nn_module=model,
+                #     target_layers=layer_configs[model_name]["target_layers"],
+                #     fc_layers=layer_configs[model_name]["fc_layers"],
+                # )
+                # cam_result = cam(x=img, class_idx=[1])
+                # gradcam = GradCAM(
+                #     nn_module=model,
+                #     target_layers=layer_configs[model_name]["target_layers"],
+                # )
+                # cam_result = gradcam(x=img, class_idx=[1])
 
         return probs, preds, targets
 

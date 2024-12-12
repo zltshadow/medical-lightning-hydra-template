@@ -307,8 +307,8 @@ class MSFEncoder(nn.Module):
         else:
             self.blocks = nn.Sequential(MambaLayer(dim=in_channels))
 
-        if num_blocks==0:
-            self.blocks=nn.Sequential()
+        if num_blocks == 0:
+            self.blocks = nn.Sequential()
 
         # Downsampling layer
         self.downsample = nn.Sequential(
@@ -919,6 +919,8 @@ if __name__ == "__main__":
     summary(model=model, input_size=img.shape)
     preds = model(img)
     print(preds, preds[0].shape)
+    for name, _ in model.named_modules():
+        print(name)
 
     # pooling = nn.AdaptiveAvgPool3d((1, 1, 1))
     # pooling_output = pooling(feature_extractor_output)

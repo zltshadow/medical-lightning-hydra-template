@@ -62,3 +62,6 @@ if __name__ == "__main__":
     )
     preds = model(img)
     print(preds, preds[0].shape)
+    print(model)
+    for name, _ in model.named_modules():
+        print(name)

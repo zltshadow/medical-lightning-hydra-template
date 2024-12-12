@@ -1,7 +1,19 @@
+from logging import Logger
 import os
 from pathlib import Path
+from typing import List
+import PIL
+import hydra
+import monai
+import omegaconf
 import pandas as pd
+from sklearn.model_selection import StratifiedKFold
+import torch
 import yaml
+from src.data.lbl_datamodule import LBLDataModule
+from src.models.components.resnet import ResNet
+from src.models.lbl_module import LBLLitModule
+from src.utils.instantiators import instantiate_loggers
 from src.utils.utils import read_dir
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
@@ -13,6 +25,8 @@ from sklearn.metrics import (
     recall_score,
 )
 import numpy as np
+import lightning as L
+import torch.nn.functional as F
 
 
 def get_preds_result():
@@ -298,8 +312,97 @@ def get_ablation_result():
     compute_and_save_metrics(results_dict["bra"], "bra_ablation", ablation=True)
 
 
+def get_cam():
+    pth_list = preds_list = read_dir(
+        "logs/train/multiruns",
+        lambda x: x.endswith(".ckpt") and "last" not in x,
+        recursive=True,
+    )
+    for checkpoint_path in pth_list:
+        model_name = Path(checkpoint_path).stem.lower()
+        from omegaconf import DictConfig
+
+        # 指定 Hydra 生成的 config.yaml 文件的路径
+        hydra_config_path = f"{Path(checkpoint_path).parent.parent}/.hydra/config.yaml"
+        # 加载配置文件
+        cfg = omegaconf.OmegaConf.load(hydra_config_path)
+
+        # if model_name in ["mshm"]:
+        if cfg.data.fold == 1:
+            # checkpoint = torch.load(checkpoint_path)
+
+            # # 定义一个函数来修改键值
+            # def rename_keys(state_dict):
+            #     new_state_dict = {}
+            #     for key, value in state_dict.items():
+            #         # 检查键名中是否包含 'net.mamba_fusion_block.'
+            #         if "net.mamba_fusion_block." in key:
+            #             # 替换键名
+            #             new_key = key.replace(
+            #                 "net.mamba_fusion_block.", "net.fusion_block."
+            #             )
+            #             new_state_dict[new_key] = value
+            #         else:
+            #             new_state_dict[key] = value
+            #     return new_state_dict
+
+            # # 修改state dictionary中的键值
+            # checkpoint["state_dict"] = rename_keys(checkpoint["state_dict"])
+            # # 保存修改后的checkpoint到原始路径
+            # torch.save(checkpoint, checkpoint_path)
+
+            if cfg.get("seed"):
+                L.seed_everything(cfg.seed, workers=True)
+                monai.utils.set_determinism(cfg.seed)
+
+            datamodule = hydra.utils.instantiate(cfg.data)
+            model = hydra.utils.instantiate(cfg.model)
+            # logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
+            logger: List[Logger] = instantiate_loggers([])
+            cfg.trainer.default_root_dir = ""
+            trainer = hydra.utils.instantiate(
+                cfg.trainer,
+                logger=logger,
+                deterministic=False,
+                benchmark=True,
+            )
+            # test_res = trainer.test(
+            #     model=model, datamodule=datamodule, ckpt_path=checkpoint_path
+            # )
+
+            predictions = trainer.predict(
+                model=model,
+                dataloaders=datamodule.test_dataloader(),
+                ckpt_path=checkpoint_path,
+            )
+            probs, preds, targets = [], [], []
+            for t in predictions:
+                probs = probs + t[0].tolist()
+                preds = preds + t[1].tolist()
+                targets = targets + t[2].tolist()
+            test_results = pd.DataFrame(
+                {
+                    "predictions": preds,
+                    "targets": targets,
+                    "probabilities": probs,
+                }
+            )
+            # cfg.paths.output_dir = "output"
+            # # Save the results to an Excel file
+            # test_results.to_excel(
+            #     os.path.join(
+            #         cfg.paths.output_dir,
+            #         f"{cfg.model.model_name.lower()}_fold{cfg.data.fold}_test_results.xlsx",
+            #     ),
+            #     index=False,
+            # )
+            # metric_dict = trainer.callback_metrics
+            test_metrics = calculate_metrics(targets, preds, probs)
+
+
 if __name__ == "__main__":
     output_dir = "outputs"
     os.makedirs(output_dir, exist_ok=True)
     get_preds_result()
     get_ablation_result()
+    get_cam()

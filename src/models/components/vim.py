@@ -2742,9 +2742,10 @@ if __name__ == "__main__":
         channels=in_channels,
         img_size=input_size,
     ).to(device)
-    img = torch.randn(
-        batch_size, in_channels, input_size[0], input_size[1]
-    ).to(device)
+    img = torch.randn(batch_size, in_channels, input_size[0], input_size[1]).to(device)
     summary(model=model, input_size=img.shape)
     preds = model(img)
     print(preds, preds[0].shape)
+    print(model)
+    for name, _ in model.named_modules():
+        print(name)
