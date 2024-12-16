@@ -14,7 +14,7 @@ class ResNet(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.model = timm.create_model("resnet152", **kwargs)
+        self.model = timm.create_model("resnet50", **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a single forward pass through the network.

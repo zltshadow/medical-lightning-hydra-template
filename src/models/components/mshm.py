@@ -911,9 +911,9 @@ if __name__ == "__main__":
         num_classes=num_classes,
         stem_channels=stem_channels,
         spatial_dims=spatial_dims,
-        mamba_encoder=False,
-        cross_attn=False,
-        mamba_fusion=False,
+        mamba_encoder=True,
+        cross_attn=True,
+        mamba_fusion=True,
     ).to(device)
     img = torch.randn(batch_size, in_channels, input_size[0], input_size[1]).to(device)
     summary(model=model, input_size=img.shape)

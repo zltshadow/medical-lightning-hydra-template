@@ -364,45 +364,67 @@ class LBLLitModule(LightningModule):
         # 模型层配置字典
         layer_configs = {
             "resnet": {
+                "index": 0,
                 "target_layers": "model.layer4",
                 "fc_layers": "model.fc",
             },
             "senet": {
+                "index": 1,
                 "target_layers": "model.layer4",
                 "fc_layers": "model.fc",
             },
             "convnext": {
+                "index": 2,
                 "target_layers": "model.stages.3",
                 "fc_layers": "model.head",
             },
             "visiontransformer": {
+                "index": 3,
                 "target_layers": "model.blocks.11",
                 "fc_layers": "model.head",
             },
             "globalcontextvit": {
+                "index": 4,
                 "target_layers": "model.stages.3",
                 "fc_layers": "model.head",
             },
             "swintransformer": {
+                "index": 5,
                 "target_layers": "model.layers.3",
                 "fc_layers": "model.head",
             },
             "vssm": {
+                "index": 6,
                 "target_layers": "layers.3",
                 "fc_layers": "head",
             },
             "nnmambaencoder": {
+                "index": 7,
                 "target_layers": "layer3",
                 "fc_layers": "mlp",
             },
             "visionmamba": {
+                "index": 8,
                 "target_layers": "layers.23",
                 "fc_layers": "norm_f",
             },
             "multiplesequencehybridmamba": {
+                "index": 9,
                 "target_layers": "feature_extractor.msf_encoder4",
                 "fc_layers": "cls_head",
             },
+        }
+        model_names_map = {
+            "resnet": "ResNet",
+            "senet": "SENet",
+            "convnext": "ConvNeXt",
+            "vit": "ViT",
+            "gcvit": "GCViT",
+            "swint": "SwinT",
+            "medmamba": "MedMamba",
+            "nnmamba": "nnMamba",
+            "vim": "ViM",
+            "mshm": "MSHM",
         }
         # with torch.set_grad_enabled(True):
         with torch.enable_grad():
@@ -523,15 +545,18 @@ class LBLLitModule(LightningModule):
                 else:
                     raise ValueError(f"Unsupported model_name: {model_name}")
 
-                grayscale_cam = cam(input_tensor=input_tensor, targets=None)
+                grayscale_cam_batch = cam(input_tensor=input_tensor, targets=None)
                 # In this example grayscale_cam has only one image in the batch:
-                grayscale_cam = grayscale_cam[0, :]
-                gray_img = grad_image[0, 0].cpu().detach().numpy()
-                rgb_img = np.stack([gray_img] * 3, axis=-1)
-                cam_image = show_cam_on_image(rgb_img, grayscale_cam)
-                output_dir = "outputs/cam"
-                os.makedirs(output_dir, exist_ok=True)
-                cv2.imwrite(f"{output_dir}/{model_name}_cam.jpg", cam_image)
+                for i in range(grayscale_cam_batch.shape[0]):
+                    grayscale_cam = grayscale_cam_batch[i, :]
+                    for seq_idx in range(3):
+                        gray_img = grad_image[i, seq_idx].cpu().detach().numpy()
+                        rgb_img = np.stack([gray_img] * 3, axis=-1)
+                        output_dir = f"outputs/cam/{batch_idx}/{i}"
+                        os.makedirs(output_dir, exist_ok=True)
+                        # cv2.imwrite(f"{output_dir}/{seq_idx}_0_gt.jpg", np.uint8(255 * rgb_img))
+                        cam_image = show_cam_on_image(rgb_img, grayscale_cam)
+                        cv2.imwrite(f"{output_dir}/{seq_idx}_{layer_configs[model_name]['index']}_{model_name}_cam.jpg", cam_image)
 
                 # gradcampp = GradCAM(
                 #     nn_module=model,

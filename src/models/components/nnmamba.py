@@ -263,6 +263,8 @@ if __name__ == "__main__":
     model = nnMambaEncoder(
         in_ch=in_channels,
         num_classes=num_classes,
+        channels=64,
+        blocks=4,
     ).to(device)
     summary(
         model,

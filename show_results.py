@@ -1,6 +1,7 @@
 from logging import Logger
 import os
 from pathlib import Path
+import shutil
 from typing import List
 import PIL
 import hydra
@@ -27,6 +28,20 @@ from sklearn.metrics import (
 import numpy as np
 import lightning as L
 import torch.nn.functional as F
+from monai.utils import set_determinism
+from monai.transforms import (
+    Compose,
+    RandFlip,
+    RandRotate,
+    RandZoom,
+    ScaleIntensity,
+    Resize,
+    ToTensor,
+)
+from monai.data import DataLoader, PILReader
+import cv2
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+import torch
 
 
 def get_preds_result():
@@ -58,7 +73,7 @@ def get_preds_result():
             res_df["targets"]
             res_df["probabilities"]
             cfg = yaml.load(f.read(), Loader=yaml.FullLoader)
-            if cfg["data"]["dataset_name"] == "LBL_all_reg_resample_2d":
+            if cfg["data"]["dataset_name"] == "LBL_all_reg_resample_2d" and "lbl_ablation" not in cfg["tags"]:
                 results_dict["lbl"][cfg["model"]["model_name"].lower()][
                     cfg["data"]["fold"]
                 ] = {}
@@ -71,7 +86,7 @@ def get_preds_result():
                 results_dict["lbl"][cfg["model"]["model_name"].lower()][
                     cfg["data"]["fold"]
                 ]["probs"] = res_df["probabilities"].tolist()
-            else:
+            elif "bra_ablation" not in cfg["tags"]:
                 results_dict["bra"][cfg["model"]["model_name"].lower()][
                     cfg["data"]["fold"]
                 ] = {}
@@ -312,7 +327,8 @@ def get_ablation_result():
     compute_and_save_metrics(results_dict["bra"], "bra_ablation", ablation=True)
 
 
-def get_cam():
+def get_cam(dataset_name):
+    output_prefix = dataset_name.split("_")[0][:3].lower()
     pth_list = preds_list = read_dir(
         "logs/train/multiruns",
         lambda x: x.endswith(".ckpt") and "last" not in x,
@@ -328,7 +344,7 @@ def get_cam():
         cfg = omegaconf.OmegaConf.load(hydra_config_path)
 
         # if model_name in ["mshm"]:
-        if cfg.data.fold == 1:
+        if cfg.data.fold == 0 and cfg.data.dataset_name == dataset_name:
             # checkpoint = torch.load(checkpoint_path)
 
             # # 定义一个函数来修改键值
@@ -399,10 +415,314 @@ def get_cam():
             # metric_dict = trainer.callback_metrics
             test_metrics = calculate_metrics(targets, preds, probs)
 
+    shutil.move("outputs/cam", f"outputs/{output_prefix}_cam")
+
+
+class LoadMulImage:
+    def __init__(self, reader, resize=False):
+        self.reader = reader()
+        self.resize = resize
+
+    def __call__(self, filename):
+        """
+        Load image file and metadata from the given filename(s).
+        If `reader` is not specified, this class automatically chooses readers based on the
+        reversed order of registered readers `self.readers`.
+
+        Args:
+            filename: path file or file-like object or a list of files.
+                will save the filename to meta_data with key `filename_or_obj`.
+                if provided a list of files, use the filename of first file to save,
+                and will stack them together as multi-channels data.
+                if provided directory path instead of file path, will treat it as
+                DICOM images series and read.
+            reader: runtime reader to load image file and metadata.
+
+        """
+        t1_img = torch.from_numpy(np.array(self.reader.read(filename[0]))).unsqueeze(
+            dim=0
+        )
+        t2_img = torch.from_numpy(np.array(self.reader.read(filename[1]))).unsqueeze(
+            dim=0
+        )
+        t1c_img = torch.from_numpy(np.array(self.reader.read(filename[2]))).unsqueeze(
+            dim=0
+        )
+        if self.resize:
+            processor = Resize((224, 224))
+            t1_img = processor(t1_img)
+            t2_img = processor(t2_img)
+            t1c_img = processor(t1c_img)
+        img = torch.concat((t1_img, t2_img, t1c_img), dim=0)
+        return img
+
+
+class LBLDataset(torch.utils.data.Dataset):
+    def __init__(self, image_files, labels, transforms):
+        self.image_files = image_files
+        self.labels = labels
+        self.transforms = transforms
+        self.load_data = LoadMulImage(reader=PILReader, resize=False)
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, index):
+        img = self.load_data(self.image_files[index])
+        return self.transforms(img), self.labels[index]
+
+
+def get_cam_gt_mask(dataset_name):
+    # dataset_name = "BraTs_TCGA_2d"
+    # dataset_name = "LBL_all_reg_resample_2d"
+    output_prefix = dataset_name.split("_")[0][:3].lower()
+    # 获取数据目录
+    data_dir = "../data"
+    seed = 42
+    set_determinism(seed=seed)
+    batch_size = 32
+    num_workers = 0
+
+    # 获取数据目录
+    data_dir = os.path.join(data_dir, dataset_name, "Nii")
+
+    # 获取类别名称
+    class_names = sorted(
+        x for x in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, x))
+    )
+    num_class = len(class_names)
+
+    # 获取每个类别的图像文件路径
+    t1_image_files = [
+        [x for x in read_dir(os.path.join(data_dir, class_names[i])) if "T1_" in x]
+        for i in range(num_class)
+    ]
+    t2_image_files = [
+        [x for x in read_dir(os.path.join(data_dir, class_names[i])) if "T2_" in x]
+        for i in range(num_class)
+    ]
+    t1c_image_files = [
+        [x for x in read_dir(os.path.join(data_dir, class_names[i])) if "T1C_" in x]
+        for i in range(num_class)
+    ]
+
+    print(len(t1_image_files[0]), len(t1_image_files[1]))
+    print(len(t2_image_files[0]), len(t2_image_files[1]))
+    print(len(t1c_image_files[0]), len(t1c_image_files[1]))
+    image_files_list = []
+    image_class = []
+    for i in range(num_class):
+        # 使用 zip 函数按顺序将 t1、t2、t1c 图像路径打包成元组
+        for t1_img, t2_img, t1c_img in zip(
+            t1_image_files[i], t2_image_files[i], t1c_image_files[i]
+        ):
+            image_files_list.append((t1_img, t2_img, t1c_img))
+            image_class.append(i)
+
+    # # 获取图像尺寸
+    # image_width, image_height = PIL.Image.open(image_files_list[0]).size
+
+    # print(f"Total image count: {len(image_class)}")
+    # print(f"Image dimensions: {image_width} x {image_height}")
+    # print(f"Label names: {class_names}")
+    # print(f"Label counts: {[len(image_files[i]) for i in range(num_class)]}")
+
+    # 设置交叉验证的折数
+    n_splits = 5
+    fold = 0
+
+    # 使用StratifiedKFold进行五折交叉验证
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+
+    # 创建一个分割对象，存储所有的训练集和验证集的索引
+    splits = list(skf.split(image_files_list, image_class))
+
+    if fold in range(n_splits):
+        train_index, val_index = splits[fold]
+
+        # 根据索引分割数据集
+        train_x, val_x = [image_files_list[i] for i in train_index], [
+            image_files_list[i] for i in val_index
+        ]
+        train_y, val_y = [image_class[i] for i in train_index], [
+            image_class[i] for i in val_index
+        ]
+
+        final_test_x = val_x
+        final_test_y = val_y
+    elif fold == "train_val":
+        # 使用StratifiedShuffleSplit进行分层抽样
+        split = StratifiedShuffleSplit(
+            n_splits=1, test_size=0.4, train_size=0.6, random_state=seed
+        )
+        for train_index, test_index in split.split(image_files_list, image_class):
+            train_x, test_x = [image_files_list[i] for i in train_index], [
+                image_files_list[i] for i in test_index
+            ]
+            train_y, test_y = [image_class[i] for i in train_index], [
+                image_class[i] for i in test_index
+            ]
+
+        # 进一步将测试集分为验证集和测试集，比例为1:1
+        test_split = StratifiedShuffleSplit(
+            n_splits=1, test_size=0.5, train_size=0.5, random_state=seed
+        )
+        for val_index, final_test_index in test_split.split(test_x, test_y):
+            val_x, final_test_x = [test_x[i] for i in val_index], [
+                test_x[i] for i in final_test_index
+            ]
+            val_y, final_test_y = [test_y[i] for i in val_index], [
+                test_y[i] for i in final_test_index
+            ]
+
+    print(
+        f"Training count: {len(train_x)}, Validation count: {len(val_x)}, Test count: {len(final_test_x)}"
+    )
+
+    # 计算并打印每个数据集中每个类别的数量
+    def print_class_counts(data_x, data_y, name):
+        class_counts = {i: 0 for i in range(num_class)}
+        for label in data_y:
+            class_counts[label] += 1
+        print(f"\n{name} set class counts:")
+        for class_name, count in zip(class_names, class_counts.values()):
+            print(f"{class_name}: {count}")
+
+    print_class_counts(train_x, train_y, "Training")
+    print_class_counts(val_x, val_y, "Validation")
+    print_class_counts(final_test_x, final_test_y, "Test")
+
+    train_transforms = Compose(
+        [
+            # EnsureChannelFirst(),
+            ScaleIntensity(),
+            # CropForeground(),
+            # Resize((224, 224)),
+            RandRotate(range_x=np.pi / 12, prob=0.5, keep_size=True),
+            RandFlip(spatial_axis=0, prob=0.5),
+            RandZoom(min_zoom=0.9, max_zoom=1.1, prob=0.5),
+            ToTensor(
+                track_meta=False,
+            ),
+        ],
+        lazy=True,
+    )
+
+    val_transforms = Compose(
+        [
+            # EnsureChannelFirst(),
+            ScaleIntensity(),
+            # CropForeground(),
+            # Resize((224, 224)),
+            ToTensor(
+                track_meta=False,
+            ),
+        ]
+    )
+    for data in train_x:
+        # data[0].replace("T1_AX_nFS", ""), data[1].replace("T2_AX_nFS", "").replace("T2_AX_FS", ""), data[2].replace("T1C_AX_FS", "")
+        # 检查三个元素是否相等
+        if (
+            not data[0].replace("T1_AX_nFS", "")
+            == data[1].replace("T2_AX_nFS", "").replace("T2_AX_FS", "")
+            == data[2].replace("T1C_AX_FS", "")
+        ):
+            print("Not all elements are equal.")
+    for data in final_test_x:
+        # data[0].replace("T1_AX_nFS", ""), data[1].replace("T2_AX_nFS", "").replace("T2_AX_FS", ""), data[2].replace("T1C_AX_FS", "")
+        # 检查三个元素是否相等
+        if (
+            not data[0].replace("T1_AX_nFS", "")
+            == data[1].replace("T2_AX_nFS", "").replace("T2_AX_FS", "")
+            == data[2].replace("T1C_AX_FS", "")
+        ):
+            print("Not all elements are equal.")
+
+    # 打开文件用于写入 train_x 的数据
+    with open(f"outputs/{output_prefix}_train_x_data.txt", "w") as train_file:
+        for data in train_x:
+            # 将 data 写入文件，每个元组占一行，元素之间用空格分隔
+            train_file.write(f"{data[0]} {data[1]} {data[2]}\n")
+
+    # 打开文件用于写入 final_test_x 的数据
+    with open(f"outputs/{output_prefix}_final_test_x_data.txt", "w") as test_file:
+        for data in final_test_x:
+            # 将 data 写入文件，每个元组占一行，元素之间用空格分隔
+            test_file.write(f"{data[0]} {data[1]} {data[2]}\n")
+
+    train_ds = LBLDataset(train_x, train_y, train_transforms)
+    val_ds = LBLDataset(val_x, val_y, val_transforms)
+    test_ds = LBLDataset(final_test_x, final_test_y, val_transforms)
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    )
+    val_loader = DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers)
+    test_loader = DataLoader(test_ds, batch_size=batch_size, num_workers=num_workers)
+    for batch_idx, batch in enumerate(test_loader):
+        image = batch[0]
+
+        for i in range(batch[0].shape[0]):
+            for seq_idx in range(3):
+                # 获取灰度图像并转换为 RGB
+                gray_img = image[i, seq_idx].cpu().detach().numpy()
+                rgb_img = np.stack([gray_img] * 3, axis=-1)
+
+                # 输出目录
+                output_dir = f"outputs/{output_prefix}_cam/{batch_idx}/{i}"
+                os.makedirs(output_dir, exist_ok=True)
+
+                rgb_img = np.uint8(255 * rgb_img)
+                # 保存原图（灰度图）
+                cv2.imwrite(f"{output_dir}/{seq_idx}_0_gt.jpg", rgb_img)
+
+                # 构建标签路径
+                seg_path = (
+                    final_test_x[batch_idx * batch_size + i][seq_idx].replace(
+                        "Nii", "Label"
+                    )[:-4]
+                    + "_Label"
+                    + ".png"
+                )
+
+                # 读取标签图像并进行轮廓提取
+                label_img = cv2.imread(
+                    seg_path, cv2.IMREAD_GRAYSCALE
+                )  # 假设标签是灰度图
+
+                if label_img is not None:
+                    # 二值化标签图像：假设标签是0和1，或者是其他类别值
+                    _, binary_label = cv2.threshold(
+                        label_img, 1, 255, cv2.THRESH_BINARY
+                    )
+
+                    # 找到标签图像中的轮廓
+                    contours, _ = cv2.findContours(
+                        binary_label, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                    )
+
+                    # 在原图上绘制轮廓
+                    cv2.drawContours(
+                        rgb_img, contours, -1, (128, 174, 128), 2
+                    )  # 绿色轮廓，线宽为2
+
+                    # 保存包含轮廓的图像
+                    cv2.imwrite(
+                        f"{output_dir}/{seq_idx}_0_mask.jpg",
+                        rgb_img,
+                    )
+
+                else:
+                    print(f"Warning: Label image not found at {seg_path}")
+
 
 if __name__ == "__main__":
     output_dir = "outputs"
     os.makedirs(output_dir, exist_ok=True)
     get_preds_result()
     get_ablation_result()
-    get_cam()
+
+    get_cam("LBL_all_reg_resample_2d")
+    get_cam_gt_mask("LBL_all_reg_resample_2d")
+
+    get_cam("BraTs_TCGA_2d")
+    get_cam_gt_mask("BraTs_TCGA_2d")
